@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Medishope Pharmacy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,300..700;1,300..700&family=Sedan:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+<div class="layout">
+<aside class="sidebar">
+  <div class="logo"><img class="logo-img" src="mmm.png" alt="Logo" onerror="this.onerror=null;this.src='logo.svg'"></div>
+  <p class="menu-label">MAIN MENU</p>
+  <nav>
+    <a href="#" class="active" data-page="dashboard"><span class="material-symbols-outlined">dashboard</span>Dashboard</a>
+    <a href="#" data-page="inventory"><span class="material-symbols-outlined">inventory_2</span>Inventory</a>
+    <a href="#" data-page="billing"><span class="material-symbols-outlined">receipt_long</span>Billing</a>
+    <a href="#" data-page="purchases"><span class="material-symbols-outlined">vaccines</span>Purchases</a>
+    <a href="#" data-page="suppliers"><span class="material-symbols-outlined">local_shipping</span>Suppliers</a>
+    <a href="#" data-page="sales"><span class="material-symbols-outlined">bar_chart</span>Sales</a>
+    <a href="#" data-page="barcode"><span class="material-symbols-outlined">barcode_scanner</span>Barcode Search</a>
+    <a href="#" data-page="reports"><span class="material-symbols-outlined">assessment</span>Reports</a>
+    <p class="menu-label">MANAGEMENT</p>
+    <a href="#" data-page="categories"><span class="material-symbols-outlined">category</span>Categories</a>
+    <a href="#" data-page="customers"><span class="material-symbols-outlined">group</span>Customers</a>
+    <a href="#" data-page="returns"><span class="material-symbols-outlined">assignment_return</span>Returns</a>
+    <a href="#" data-page="prescriptions"><span class="material-symbols-outlined">clinical_notes</span>Prescriptions</a>
+    <a href="#" data-page="payments"><span class="material-symbols-outlined">payments</span>Payments</a>
+    <a href="#" data-page="tax"><span class="material-symbols-outlined">percent</span>Tax</a>
+    <a href="#" data-page="notifications"><span class="material-symbols-outlined">notifications</span>Notifications<span class="badge hidden" id="notif-badge">0</span></a>
+    <a href="#" data-page="settings"><span class="material-symbols-outlined">settings</span>Settings</a>
+    <a href="#" data-page="audit"><span class="material-symbols-outlined">policy</span>Audit &amp; Compliance</a>
+  </nav>
+  <div class="admin"><strong>Pharmacy Admin</strong><p>Administrator</p></div>
+</aside>
+
+<main class="main">
+<section class="page active" id="dashboard">
+  <div class="heading"><div><h2>Welcome back, <span id="user-name">Mohanraj</span>!</h2><p>
+
+  </p></div><button class="primary" data-go="billing">+ New Sale</button></div>
+  <div class="stats">
+    <div class="stat"><p>Total Medicines</p><h2 id="total-medicines">0</h2><small>Registered products</small></div>
+    <div class="stat"><p>Available Stock</p><h2 id="total-stock">0</h2><small>Total units</small></div>
+    <div class="stat"><p>Today's Sales</p><h2 id="today-sales">₹0.00</h2><small>Completed invoices</small></div>
+    <div class="stat warning"><p>Low Stock</p><h2 id="low-count">0</h2><small>Replenishment alerts</small></div>
+    <div class="stat danger"><p>Expiry Alerts</p><h2 id="expiry-count">0</h2><small>Expired or near expiry</small></div>
+    <div class="stat"><p>Inventory Value</p><h2 id="dashboard-inventory-value">₹0.00</h2><small>Purchase value of stock</small></div>
+    <div class="stat warning"><p>Pending Purchases</p><h2 id="pending-purchases">0</h2><small>Orders awaiting receipt</small></div>
+    <div class="stat"><p>Active Suppliers</p><h2 id="active-suppliers">0</h2><small>Registered suppliers</small></div>
+  </div>
+  <div class="actions">
+    <button class="primary" data-go="inventory"><span class="material-symbols-outlined">add</span>Add Medicine</button>
+    <button class="secondary" data-go="purchases"><span class="material-symbols-outlined">vaccines</span>Record Purchase</button>
+    <button class="secondary" data-go="barcode"><span class="material-symbols-outlined">barcode_scanner</span>Barcode Search</button>
+  </div>
+  <div class="charts">
+    <div class="panel"><h3>Sales: Last 7 Days</h3><div id="chart-sales"></div></div>
+    <div class="panel"><h3>Stock Status</h3><div id="chart-status"></div></div>
+    <div class="panel"><h3>Stock by Medicine</h3><div id="chart-stock"></div></div>
+    <div class="panel"><h3>Payment Methods</h3><div id="chart-pay"></div></div>
+  </div>
+  <div class="panel"><div class="panel-header"><h3>Recent Sales</h3><button class="secondary" data-go="sales">View All</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Items</th><th>Payment</th><th>Total</th></tr></thead><tbody id="recent-sales"></tbody></table></div></div>
+  <div class="panel"><h3>Stock Alerts</h3><div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Batch</th><th>Quantity</th><th>Expiry</th><th>Status</th></tr></thead><tbody id="dashboard-alerts"></tbody></table></div></div>
+</section>
+
+<section class="page" id="inventory">
+  <div class="heading"><div><h2>Medicine Inventory</h2><p>Manage medicines, batches and expiry dates.</p></div><button class="primary" id="show-med">+ Add Medicine</button></div>
+  <form id="med-form" class="panel form-grid hidden">
+    <h3 class="full">Add New Medicine</h3>
+    <label>Medicine Name<input id="med-name" required></label>
+    <label>Barcode<input id="med-barcode" required></label>
+    <label>Category<select id="med-category" required></select></label>
+    <label>Batch Number<input id="med-batch" required></label>
+    <label>Quantity<input id="med-qty" type="number" min="0" required></label>
+    <label>Purchase Price (₹)<input id="med-cost" type="number" min="0" step=".01" required></label>
+    <label>MRP (₹)<input id="med-price" type="number" min=".01" step=".01" required></label>
+    <label>GST Rate<select id="med-gst" required></select></label>
+    <label>Prescription Required<select id="med-rx"><option value="no">No</option><option value="yes">Yes (Rx only)</option></select></label>
+    <label>Expiry Date<input id="med-expiry" type="date" required></label>
+    <label>Minimum Stock<input id="med-min" type="number" min="0" value="10" required></label>
+    <div class="full form-buttons"><button class="primary">Save Medicine</button><button type="button" class="secondary" id="cancel-med">Cancel</button></div>
+  </form>
+  <div class="panel"><div class="toolbar"><input id="inventory-search" placeholder="Search medicine or barcode..."><select id="cat-filter"></select><select id="stock-filter"><option value="all">All Stock</option><option value="low">Low Stock</option><option value="expiry">Expiry Alerts</option></select></div>
+    <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Barcode</th><th>Batch</th><th>Quantity</th><th>MRP</th><th>Expiry</th><th>Status</th><th>Action</th></tr></thead><tbody id="inventory-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="billing">
+  <div class="heading"><div><h2>Billing / POS</h2><p>Create sales invoices and deduct inventory.</p></div></div>
+  <div class="panel"><label class="field-label">Search medicine or scan barcode<input id="bill-search" placeholder="Enter medicine name or barcode..."></label><div id="bill-results"></div></div>
+  <div class="panel"><h3>Current Cart</h3><div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Quantity</th><th>Price</th><th>GST</th><th>Total</th><th>Action</th></tr></thead><tbody id="cart-table"></tbody></table></div>
+    <div class="summary">
+      <p>Subtotal <strong id="subtotal">₹0.00</strong></p><p>GST <strong id="tax">₹0.00</strong></p><p class="total">Grand Total <strong id="grand-total">₹0.00</strong></p>
+      <label class="field-label">Customer<select id="bill-customer"></select></label>
+      <label class="field-label hidden" id="rx-box">Prescription (required for Rx items)<select id="bill-rx"></select></label>
+      <label class="field-label">Payment Method<select id="payment"><option>Cash</option><option>UPI</option><option>Card</option></select></label>
+      <label class="field-label">Amount Received (₹)<input id="amount-paid" type="number" min="0" step=".01"></label>
+      <button class="primary" id="checkout" style="justify-content:center">Complete Sale</button>
+    </div></div>
+</section>
+
+<section class="page" id="purchases">
+  <div class="heading"><div><h2>Purchase Management</h2><p>Receive medicine stock from suppliers.</p></div></div>
+  <form id="purchase-form" class="panel form-grid">
+    <h3 class="full">Record Purchase</h3>
+    <label>Supplier Name<input id="pur-supplier" required></label>
+    <label>Supplier Invoice Number<input id="pur-invoice" required></label>
+    <label>Medicine Name<input id="pur-name" required></label>
+    <label>Batch Number<input id="pur-batch" required></label>
+    <label>Quantity<input id="pur-qty" type="number" min="1" required></label>
+    <label>Purchase Price (₹)<input id="pur-cost" type="number" min=".01" step=".01" required></label>
+    <label>MRP (₹)<input id="pur-mrp" type="number" min=".01" step=".01" required></label>
+    <label>Expiry Date<input id="pur-expiry" type="date" required></label>
+    <div class="full"><button class="primary">Record Purchase</button></div>
+  </form>
+  <div class="panel"><h3>Purchase History</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Supplier</th><th>Medicine</th><th>Batch</th><th>Qty</th><th>Total</th><th>Date</th></tr></thead><tbody id="purchase-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="suppliers">
+  <div class="heading"><div><h2>Supplier Management</h2><p>Manage supplier information.</p></div><button class="primary" id="show-supplier">+ Add Supplier</button></div>
+  <form id="supplier-form" class="panel form-grid hidden">
+    <h3 class="full">New Supplier</h3>
+    <label>Supplier Name<input id="sup-name" required></label><label>Contact Person<input id="sup-contact"></label>
+    <label>Phone<input id="sup-phone" required></label><label>Email<input id="sup-email" type="email"></label>
+    <label>GSTIN<input id="sup-gstin"></label><label>Address<input id="sup-address"></label>
+    <div class="full"><button class="primary">Save Supplier</button></div>
+  </form>
+  <div class="panel"><div class="toolbar"><input id="supplier-search" placeholder="Search suppliers..."></div><div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>Email</th><th>GSTIN</th></tr></thead><tbody id="supplier-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="sales">
+  <div class="heading"><div><h2>Sales History</h2><p>Review completed invoices.</p></div></div>
+  <div class="panel"><div class="toolbar"><input id="sales-search" placeholder="Search invoice..."><input id="sales-date" type="date" style="max-width:200px"></div><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Items</th><th>Payment</th><th>Subtotal</th><th>GST</th><th>Total</th><th>Status</th><th>Action</th></tr></thead><tbody id="sales-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="barcode">
+  <div class="heading"><div><h2>Barcode Search</h2><p>Scan or enter a medicine barcode.</p></div></div>
+  <div class="panel barcode-box"><div class="barcode-symbol"><span class="material-symbols-outlined">barcode_scanner</span></div><h3>Find a Medicine</h3><p>Use a USB barcode scanner or type a barcode.</p>
+    <form id="barcode-form" class="barcode-form"><input id="barcode-input" placeholder="Enter barcode..." required><button class="primary">Search</button></form><div id="barcode-result"></div></div>
+</section>
+
+<section class="page" id="reports">
+  <div class="heading"><div><h2>Reports &amp; Analytics</h2><p>Sales and inventory summary.</p></div><button class="secondary" id="export">Export Inventory CSV</button></div>
+  <div class="stats"><div class="stat"><p>Total Sales</p><h2 id="report-sales">₹0.00</h2></div><div class="stat"><p>Total Purchases</p><h2 id="report-purchases">₹0.00</h2></div><div class="stat"><p>Inventory Value</p><h2 id="report-value">₹0.00</h2></div></div>
+  <div class="panel"><h3>Stock and Expiry Report</h3><div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Batch</th><th>Quantity</th><th>Stock Value</th><th>Expiry</th><th>Status</th></tr></thead><tbody id="report-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="categories">
+  <div class="heading"><div><h2>Medicine Categories</h2><p>Classify tablets, capsules, syrups, injections and other products.</p></div></div>
+  <form id="cat-form" class="panel toolbar"><input id="cat-name" placeholder="New category name (e.g. Inhaler)" required><button class="primary">+ Add Category</button></form>
+  <div class="stats" id="cat-grid"></div>
+</section>
+
+<section class="page" id="customers">
+  <div class="heading"><div><h2>Customer Management</h2><p>Customer profiles, purchase history and contact details.</p></div><button class="primary" id="show-cust">+ Add Customer</button></div>
+  <form id="customer-form" class="panel form-grid hidden">
+    <h3 class="full">New Customer</h3>
+    <label>Name<input id="cust-name" required></label><label>Phone<input id="cust-phone" required></label>
+    <label>Email<input id="cust-email" type="email"></label><label>Address<input id="cust-address"></label>
+    <div class="full"><button class="primary">Save Customer</button></div>
+  </form>
+  <div class="panel"><div class="toolbar"><input id="customer-search" placeholder="Search by name or phone..."></div>
+    <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Phone</th><th>Email</th><th>Address</th><th>Invoices</th><th>Total Spent</th><th>Outstanding</th><th>Action</th></tr></thead><tbody id="customer-table"></tbody></table></div></div>
+  <div class="panel hidden" id="cust-history"></div>
+</section>
+
+<section class="page" id="returns">
+  <div class="heading"><div><h2>Returns Management</h2><p>Sales returns, supplier returns and refund tracking.</p></div></div>
+  <form id="return-form" class="panel form-grid">
+    <h3 class="full">Record Return</h3>
+    <label>Return Type<select id="ret-type"><option value="sales">Sales Return (customer)</option><option value="supplier">Supplier Return</option></select></label>
+    <label>Invoice No. / Supplier<input id="ret-ref" required placeholder="INV-0001 or supplier name"></label>
+    <label>Medicine<select id="ret-med" required></select></label>
+    <label>Quantity<input id="ret-qty" type="number" min="1" required></label>
+    <label>Reason<input id="ret-reason" required placeholder="Damaged, expired, wrong item..."></label>
+    <div class="full"><button class="primary">Record Return</button></div>
+  </form>
+  <div class="panel"><h3>Return History &amp; Refund Tracking</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>Type</th><th>Reference</th><th>Medicine</th><th>Qty</th><th>Amount</th><th>Reason</th><th>Date</th><th>Status</th><th>Action</th></tr></thead><tbody id="return-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="prescriptions">
+  <div class="heading"><div><h2>Prescription Management</h2><p>Record prescriptions and validate prescription requirements.</p></div><button class="primary" id="show-rx">+ Record Prescription</button></div>
+  <form id="rx-form" class="panel form-grid hidden">
+    <h3 class="full">New Prescription</h3>
+    <label>Patient Name<input id="rx-patient" list="cust-list" required></label><datalist id="cust-list"></datalist>
+    <label>Doctor Name<input id="rx-doctor" required></label>
+    <label>Doctor Reg. No.<input id="rx-reg"></label>
+    <label>Prescription Date<input id="rx-date" type="date" required></label>
+    <label>Valid Until<input id="rx-valid" type="date" required></label>
+    <label>Medicines Prescribed<input id="rx-meds" required></label>
+    <div class="full"><button class="primary">Save Prescription</button></div>
+  </form>
+  <div class="panel"><h3>Prescription Records</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>Patient</th><th>Doctor</th><th>Reg. No.</th><th>Date</th><th>Valid Until</th><th>Medicines</th><th>Status</th><th>Used In</th></tr></thead><tbody id="rx-table"></tbody></table></div></div>
+  <div class="panel"><h3>Prescription Requirements</h3><p style="color:#6b7280;margin-bottom:10px">Medicines marked Rx cannot be billed without a valid prescription.</p><div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Category</th><th>Rx Required</th><th>Action</th></tr></thead><tbody id="rx-req-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="payments">
+  <div class="heading"><div><h2>Payment Management</h2><p>Cash, UPI, card, payment status and outstanding balances.</p></div></div>
+  <div class="stats">
+    <div class="stat"><p>Total Received</p><h2 id="pay-received">₹0.00</h2></div>
+    <div class="stat danger"><p>Outstanding</p><h2 id="pay-out">₹0.00</h2></div>
+    <div class="stat"><p>Cash</p><h2 id="pay-cash">₹0.00</h2></div>
+    <div class="stat"><p>UPI</p><h2 id="pay-upi">₹0.00</h2></div>
+    <div class="stat"><p>Card</p><h2 id="pay-card">₹0.00</h2></div>
+  </div>
+  <div class="panel"><h3>Outstanding Balances</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Action</th></tr></thead><tbody id="out-table"></tbody></table></div></div>
+  <div class="panel"><h3>Payment History</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Method</th><th>Amount</th></tr></thead><tbody id="pay-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="tax">
+  <div class="heading"><div><h2>Tax Management</h2><p>Configure applicable GST rates and invoice tax calculations.</p></div></div>
+  <div class="panel"><h3>GST Slabs</h3><div id="slab-chips"></div>
+    <form id="tax-form" class="toolbar" style="margin-top:8px"><input id="tax-rate" type="number" min="0" max="100" step="0.01" placeholder="New GST rate (%)" required style="max-width:240px"><button class="primary">+ Add Slab</button></form></div>
+  <div class="panel"><h3>GST Collected on Sales (by rate)</h3><div class="table-wrap"><table><thead><tr><th>GST Rate</th><th>Taxable Value</th><th>CGST</th><th>SGST</th><th>Total GST</th></tr></thead><tbody id="tax-table"></tbody></table></div></div>
+</section>
+
+<section class="page" id="notifications">
+  <div class="heading"><div><h2>Notifications</h2><p>Low-stock, expiry, purchase and payment alerts.</p></div><select id="note-filter" style="max-width:200px"><option value="">All Alerts</option><option>Low Stock</option><option>Expiry</option><option>Purchase</option><option>Payment</option></select></div>
+  <div class="panel" id="note-list"></div>
+</section>
+
+<section class="page" id="settings">
+  <div class="heading"><div><h2>Settings</h2><p>Pharmacy details, invoice format, tax configuration and backup.</p></div></div>
+  <form id="settings-form" class="panel form-grid">
+    <h3 class="full">Pharmacy Details</h3>
+    <label>Pharmacy Name<input id="set-name" required></label><label>Phone<input id="set-phone"></label>
+    <label>Address<input id="set-address"></label><label>GSTIN<input id="set-gstin"></label>
+    <label>Drug Licence No.<input id="set-dlno"></label><label>Logged-in User<input id="set-user" required></label>
+    <h3 class="full">Invoice Format</h3>
+    <label>Invoice Prefix<input id="set-prefix" required></label><label>Invoice Footer Note<input id="set-footer"></label>
+    <h3 class="full">Tax Configuration</h3>
+    <label>Default GST Rate<select id="set-gst"></select></label>
+    <div class="full"><button class="primary">Save Settings</button></div>
+  </form>
+  <div class="panel"><h3>Backup &amp; Data</h3><div class="actions"><button class="secondary" id="backup-export">Download Backup (JSON)</button><label class="secondary" style="cursor:pointer">Restore Backup<input type="file" id="backup-import" accept=".json" hidden></label><button class="danger-btn" id="reset-data">Reset All Data</button></div></div>
+</section>
+
+<section class="page" id="audit">
+  <div class="heading"><div><h2>Audit &amp; Compliance</h2><p>Track stock changes, billing corrections and user activity.</p></div><button class="secondary" id="audit-export">Export Audit CSV</button></div>
+  <div class="stats"><div class="stat"><p>Total Events</p><h2 id="audit-total">0</h2></div><div class="stat warning"><p>Stock Changes</p><h2 id="audit-stock">0</h2></div><div class="stat danger"><p>Billing Corrections</p><h2 id="audit-bill">0</h2></div></div>
+  <div class="panel"><div class="toolbar"><input id="audit-search" placeholder="Search activity..."><select id="audit-filter" style="max-width:220px"></select></div>
+    <div class="table-wrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody id="audit-table"></tbody></table></div></div>
+</section>
+</main>
+</div>
+</div>
+<div id="toast" role="status"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
