@@ -195,9 +195,8 @@
     <label>Supplier Name<input id="sup-name" required></label><label>Contact Person<input id="sup-contact"></label>
     <label>Phone<input id="sup-phone" required></label><label>Email<input id="sup-email" type="email"></label>
     <label>GSTIN<input id="sup-gstin"></label><label>Address<input id="sup-address"></label>
-    <div class="full"><button class="primary">Save Supplier</button></div>
-  </form>
-  <div class="panel"><div class="toolbar"><input id="supplier-search" placeholder="Search suppliers..."></div><div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>Email</th><th>GSTIN</th></tr></thead><tbody id="supplier-table"></tbody></table></div></div>
+<div class="full form-buttons"><button class="primary">Save Supplier</button><button type="button" class="secondary" id="cancel-supplier">Cancel</button></div>  </form>
+  <div class="panel"><div class="toolbar"><input id="supplier-search" placeholder="Search suppliers..."></div><div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>Email</th><th>GSTIN</th><th>Action</th></tr></thead><tbody id="supplier-table"></tbody></table></div></div>
 </section>
 
 <section class="page" id="sales">
@@ -287,7 +286,7 @@
 </section>
 
 <section class="page" id="notifications">
-  <div class="heading"><div><h2>Notifications</h2><p>Low-stock, expiry, purchase and payment alerts.</p></div><select id="note-filter" style="max-width:200px"><option value="">All Alerts</option><option>Low Stock</option><option>Expiry</option><option>Purchase</option><option>Payment</option></select></div>
+  <div class="heading"><div><h2>Notifications</h2><p>Low-stock, expiry, return purchase and payment alerts.</p></div><select id="note-filter" style="max-width:200px"><option value="">All Alerts</option><option>Low Stock</option><option>Expiry</option><option>Purchase</option><option>Payment</option></select></div>
   <div class="panel" id="note-list"></div>
 </section>
 

@@ -504,3 +504,212 @@ function render(){
 }
 render();
 loadCustomersFromMySQL();
+/* ===== MySQL: medicines, suppliers, prescriptions, purchases ===== */
+async function api(path, opts = {}) {
+    const r = await fetch(API_BASE + path, {
+        headers: { "Content-Type": "application/json" }, ...opts
+    });
+    const d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.message || "Request failed");
+    return d;
+}
+
+async function loadFromMySQL() {
+    try {
+        const [m, s, p, pu] = await Promise.all([
+            api("/medicines"), api("/suppliers"), api("/prescriptions"), api("/purchases")
+        ]);
+        db.meds = m.medicines.map(x => ({ ...x, rx: !!x.rx }));
+        db.suppliers = s.suppliers;
+        db.prescriptions = p.prescriptions;
+        db.purchases = pu.purchases;
+        save();
+        render();
+    } catch (err) {
+        console.error(err);
+        toast("Could not load data from MySQL");
+    }
+}
+
+/* Inventory */
+$('#med-form').onsubmit = async e => {
+    e.preventDefault();
+    const v = i => $('#med-' + i).value;
+    const body = {
+        name: v('name').trim(), barcode: v('barcode').trim(), category: v('category'),
+        batch: v('batch').trim(), qty: +v('qty'), cost: +v('cost'), price: +v('price'),
+        gst: +v('gst'), expiry: v('expiry'), min: +v('min'), rx: v('rx') === 'yes'
+    };
+    try {
+        await api('/medicines', { method: 'POST', body: JSON.stringify(body) });
+        log('Stock added', `${body.name} (${body.batch}) opening quantity ${body.qty}`);
+        e.target.reset();
+        $('#med-gst').value = db.settings.defaultGst;
+        e.target.classList.add('hidden');
+        toast('Medicine saved to MySQL');
+        await loadFromMySQL();
+    } catch (err) { toast(err.message); }
+};
+
+async function delMed(id) {
+    const m = db.meds.find(x => x.id === id);
+    if (!m || !confirm('Delete this medicine?')) return;
+    try {
+        await api('/medicines/' + id, { method: 'DELETE' });
+        log('Medicine deleted', `${m.name} (${m.batch})`);
+        await loadFromMySQL();
+    } catch (err) { toast(err.message); }
+}
+
+async function adjMed(id) {
+    const m = db.meds.find(x => x.id === id);
+    const v = prompt(`New quantity for ${m.name} (current ${m.qty}):`, m.qty);
+    if (v === null) return;
+    const n = parseInt(v);
+    if (isNaN(n) || n < 0) return toast('Invalid quantity');
+    const r = prompt('Reason for adjustment:', 'Stock count correction');
+    if (!r) return toast('Reason is required');
+    try {
+        await api('/medicines/' + id, { method: 'PUT', body: JSON.stringify({ qty: n }) });
+        log('Stock adjusted', `${m.name} (${m.batch}): ${m.qty} to ${n}. ${r}`);
+        await loadFromMySQL();
+    } catch (err) { toast(err.message); }
+}
+
+async function togRx(id) {
+    const m = db.meds.find(x => x.id === id);
+    try {
+        await api('/medicines/' + id, { method: 'PUT', body: JSON.stringify({ rx: !m.rx }) });
+        log('Rx requirement changed', `${m.name}: ${!m.rx ? 'now requires' : 'no longer requires'} prescription`);
+        await loadFromMySQL();
+    } catch (err) { toast(err.message); }
+}
+
+/* Billing: after a sale, push the reduced stock to MySQL */
+const _localCheckout = $('#checkout').onclick;
+$('#checkout').onclick = async () => {
+    const before = db.sales.length;
+    _localCheckout();
+    if (db.sales.length > before) {
+        printInv(db.sales[0].invoice);   // <-- new line: opens the bill
+        await Promise.all(db.sales[0].items.map(i => {
+            const m = db.meds.find(x => x.id === i.medId);
+            return m && api('/medicines/' + m.id, { method: 'PUT', body: JSON.stringify({ qty: m.qty }) }).catch(console.error);
+        }));
+    }
+};
+
+/* Suppliers */
+$('#supplier-form').onsubmit = async e => {
+    e.preventDefault();
+    const v = i => $('#sup-' + i).value.trim();
+    try {
+        await api('/suppliers', { method: 'POST', body: JSON.stringify({
+            name: v('name'), contact: v('contact'), phone: v('phone'),
+            email: v('email'), gstin: v('gstin'), address: v('address')
+        })});
+        log('Supplier added', v('name'));
+        e.target.reset();
+        e.target.classList.add('hidden');
+        toast('Supplier saved to MySQL');
+        await loadFromMySQL();
+    } catch (err) { toast(err.message); }
+};
+
+/* Prescriptions */
+$('#rx-form').onsubmit = async e => {
+    e.preventDefault();
+    const v = i => $('#rx-' + i).value.trim();
+    try {
+        await api('/prescriptions', { method: 'POST', body: JSON.stringify({
+            patient: v('patient'), doctor: v('doctor'), reg: v('reg'),
+            date: v('date'), valid: v('valid'), meds: v('meds')
+        })});
+        log('Prescription recorded', `${v('patient')} (Dr. ${v('doctor')})`);
+        e.target.reset();
+        e.target.classList.add('hidden');
+        toast('Prescription saved to MySQL');
+        await loadFromMySQL();
+    } catch (err) { toast(err.message); }
+};
+
+/* Purchases */
+$('#purchase-form').onsubmit = async e => {
+    e.preventDefault();
+    const v = i => $('#pur-' + i).value.trim();
+    try {
+        await api('/purchases', { method: 'POST', body: JSON.stringify({
+            invoice: v('invoice'), supplier: v('supplier'), name: v('name'), batch: v('batch'),
+            qty: +v('qty'), cost: +v('cost'), mrp: +v('mrp'), expiry: v('expiry')
+        })});
+        log('Stock added', `${v('name')} (${v('batch')}) +${v('qty')} via purchase ${v('invoice')}`);
+        e.target.reset();
+        toast('Purchase saved to MySQL');
+        await loadFromMySQL();
+    } catch (err) { toast(err.message); }
+};
+
+loadFromMySQL();
+/* ===== Thermal receipt 80mm, black & white ===== */
+function printInv(no){
+  const s=db.sales.find(x=>x.invoice===no),st=db.settings,w=window.open('','_blank');
+  if(!w)return toast('Allow pop-ups to print');
+  const ig=i=>i.gst??((db.meds.find(m=>m.id===i.medId||m.name===i.name)||{}).gst??0);
+  const status=pstat(s)[0].toUpperCase();
+  const half=s.gst/2;
+  const qtyTotal=s.items.reduce((a,i)=>a+i.qty,0);
+  const items=s.items.map(i=>`
+    <div class="it">
+      <div class="nm">${esc(i.name)}</div>
+      <div class="ln"><span>${i.qty} x ${fmt(i.price)} <small>(GST ${ig(i)}%)</small></span><b>${fmt(i.price*i.qty)}</b></div>
+    </div>`).join('');
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${no}</title>
+  <style>
+    @page{size:80mm auto;margin:0}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{width:72mm;margin:0 auto;padding:4mm 0;font-family:'Courier New',monospace;font-size:12px;line-height:1.35;color:#000;background:#fff}
+    .c{text-align:center}
+    h1{font-size:17px;letter-spacing:.5px;text-transform:uppercase}
+    .sm{font-size:11px}
+    hr{border:0;border-top:1px dashed #000;margin:6px 0}
+    hr.solid{border-top:1px solid #000}
+    .row{display:flex;justify-content:space-between}
+    .it{margin-bottom:5px}
+    .it .nm{font-weight:700}
+    .ln{display:flex;justify-content:space-between}
+    small{font-size:10px}
+    .grand{font-size:16px;font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000;padding:4px 0;margin:4px 0}
+    .status{margin:6px auto;width:max-content;border:2px solid #000;padding:2px 14px;font-weight:700;letter-spacing:2px}
+    @media screen{body{margin:10px auto;border:1px dashed #999;padding:4mm}}
+  </style></head><body>
+    <div class="c">
+      <h1>${esc(st.name)}</h1>
+      <div class="sm">${esc(st.address||'')}</div>
+      <div class="sm">${st.phone?'Ph: '+esc(st.phone):''}</div>
+      ${st.gstin?`<div class="sm">GSTIN: ${esc(st.gstin)}</div>`:''}
+      ${st.dlno?`<div class="sm">DL No: ${esc(st.dlno)}</div>`:''}
+    </div>
+    <hr>
+    <div class="row"><span>Bill: <b>${no}</b></span><span>${s.date}</span></div>
+    <div>Customer: ${esc(s.customer||'Walk-in')}</div>
+    <div>Payment: ${esc(s.payment)}</div>
+    <hr class="solid">
+    ${items}
+    <hr>
+    <div class="row"><span>Items / Qty</span><span>${s.items.length} / ${qtyTotal}</span></div>
+    <div class="row"><span>Subtotal</span><span>${fmt(s.subtotal)}</span></div>
+    <div class="row"><span>CGST</span><span>${fmt(half)}</span></div>
+    <div class="row"><span>SGST</span><span>${fmt(half)}</span></div>
+    <div class="row grand"><span>TOTAL</span><span>${fmt(s.total)}</span></div>
+    <div class="row"><span>Paid</span><span>${fmt(s.paid??s.total)}</span></div>
+    ${(s.balance||0)>0.005?`<div class="row"><b>Balance Due</b><b>${fmt(s.balance)}</b></div>`:''}
+    <div class="status">${status}</div>
+    <hr>
+    <div class="c sm">${esc(st.footer||'Thank you! Get well soon.')}</div>
+    <div class="c sm">Medicines once sold will not be taken back<br>without a valid bill.<br>E mail:www.medicare.com</div>
+    <div class="c sm" style="margin-top:6px">*** Thank you, visit again ***</div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+  </body></html>`);
+  w.document.close();
+}
