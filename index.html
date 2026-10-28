@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Medishope Pharmacy</title>
+<title>Medishop Pharmacy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
@@ -12,10 +12,67 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,300..700;1,300..700&family=Sedan:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="login.css">
 </head>
 <body>
 
-<div id="app">
+<!-- ============ ADMIN LOGIN (starting page) ============ -->
+<div id="login-screen">
+  <div class="login-wrap">
+
+    <section class="login-brand">
+      <div class="login-logo-box">
+        <img class="login-logo" src="mmm.png" alt="Medishop Pharmacy logo" onerror="this.onerror=null;this.src='logo.svg'">
+      </div>
+      <h1>MEDISHOP PHARMACY</h1>
+      <p>Care in Every Dose, Trust in Every Transaction.</p>
+      <ul>
+        <li><span class="material-symbols-outlined">inventory_2</span>Stock and expiry tracking</li>
+        <li><span class="material-symbols-outlined">receipt_long</span>GST-ready billing and invoices</li>
+        <li><span class="material-symbols-outlined">policy</span>Audit and compliance logs</li>
+      </ul>
+    </section>
+
+    <section class="login-card">
+      <div class="login-head">
+        <span class="material-symbols-outlined">admin_panel_settings</span>
+        <h2>Admin Sign In</h2>
+        <p>Enter your credentials to access the dashboard.</p>
+      </div>
+
+      <form id="login-form" novalidate>
+        <label>Username
+          <div class="input-wrap">
+            <span class="material-symbols-outlined">person</span>
+            <input id="login-user" type="text" autocomplete="username" placeholder="Enter username">
+          </div>
+        </label>
+
+        <label>Password
+          <div class="input-wrap">
+            <span class="material-symbols-outlined">lock</span>
+            <input id="login-pass" type="password" autocomplete="current-password" placeholder="Enter password">
+            <button type="button" id="toggle-pass" class="eye" aria-label="Show password">
+              <span class="material-symbols-outlined" id="eye-icon">visibility</span>
+            </button>
+          </div>
+        </label>
+
+        <div id="login-error" class="login-error hidden" role="alert"></div>
+
+        <button class="login-btn" type="submit">
+          Sign In <span class="material-symbols-outlined">arrow_forward</span>
+        </button>
+      </form>
+
+      <p class="login-foot">Authorised pharmacy staff only.</p>
+    </section>
+
+  </div>
+</div>
+
+<!-- ============ MAIN APP (shown after login) ============ -->
+<div id="app" class="hidden">
 <div class="layout">
 <aside class="sidebar">
   <div class="logo"><img class="logo-img" src="mmm.png" alt="Logo" onerror="this.onerror=null;this.src='logo.svg'"></div>
@@ -40,7 +97,13 @@
     <a href="#" data-page="settings"><span class="material-symbols-outlined">settings</span>Settings</a>
     <a href="#" data-page="audit"><span class="material-symbols-outlined">policy</span>Audit &amp; Compliance</a>
   </nav>
-  <div class="admin"><strong>Pharmacy Admin</strong><p>Administrator</p></div>
+    <div class="admin">
+    <strong>Pharmacy Admin</strong>
+    <p>Administrator</p>
+    <button type="button" id="logout-btn" class="logout-btn"><span class="material-symbols-outlined">logout</span>Sign Out</button>
+  </div>
+
+  <button type="button" id="back-site" class="back">← Back to Website</button>
 </aside>
 
 <main class="main">
@@ -255,7 +318,14 @@
 </div>
 </div>
 <div id="toast" role="status"></div>
+<form id="demo-form">
+  <input type="text" name="name" placeholder="Name" required>
+  <input type="email" name="email" placeholder="Email" required>
+  <button type="submit">Submit Demo Request</button>
+</form>
+<div id="form-success" class="hidden">Thank you! We'll contact you shortly.</div>
 
+<script src="auth.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
