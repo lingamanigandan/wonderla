@@ -37,11 +37,75 @@ const pill=m=>{const s=status(m);return `<span class="pill ${s[1]}">${s[0]}</spa
 const rows=(a,cols,msg='No records yet')=>a.length?a.join(''):`<tr><td class="empty" colspan="${cols}">${msg}</td></tr>`;
 const nextId=a=>a.reduce((x,y)=>Math.max(x,y.id||0),0)+1;
 
-/* Website */
-$$('[data-open-app]').forEach(b=>b.onclick=()=>{$('#site').classList.add('hidden');$('#app').classList.remove('hidden');scrollTo(0,0)});
-$('#back-site').onclick=()=>{$('#app').classList.add('hidden');$('#site').classList.remove('hidden')};
-$$('[data-tab]').forEach(b=>b.onclick=()=>{$$('[data-tab]').forEach(x=>x.classList.remove('on'));b.classList.add('on');$$('.tp').forEach((p,i)=>p.classList.toggle('hidden',i!=b.dataset.tab))});
-$('#demo-form').onsubmit=e=>{e.preventDefault();e.target.reset();$('#form-success').classList.remove('hidden');setTimeout(()=>$('#form-success').classList.add('hidden'),6000)};
+/* ===== Barcode generation: first 3 letters of supplier + batch number ===== */
+/* Example: supplier "MediSupply Co." + batch "PCM01" => MEDPCM01 (adds -2, -3 ... if it already exists) */
+const supCode=n=>(String(n||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,3))||'GEN';
+function makeBarcode(supplier,batch,ignoreId){
+ const b=String(batch||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ if(!b)return '';
+ const base=supCode(supplier)+b;let code=base,n=2;
+ while(db.meds.some(m=>m.barcode===code&&m.id!==ignoreId))code=base+'-'+n++;
+ return code}
+function drawBarcode(svg,code){
+ svg.innerHTML='';
+ if(!code||!window.JsBarcode)return;
+ try{JsBarcode(svg,code,{format:'CODE128',height:55,width:2,displayValue:true,fontSize:14,margin:6})}catch(x){}}
+/* ===== Two barcode modes, chosen automatically =====
+   A) MANUFACTURER barcode (typed/scanned from the pack): one barcode per MEDICINE, shared by all its batches.
+      Scanning it in Billing picks the earliest-expiry batch automatically (FEFO).
+   B) No manufacturer barcode (left blank): a per-BATCH label code (supplier + batch) is generated.
+      Scanning it selects exactly that batch. Print the label with the Label button.
+   Batch rule: same medicine name + same batch number = same lot (stock is added to it);
+   a new batch number = a new inventory row with its own quantity and expiry. */
+function findBatch(){
+ const n=$('#med-name').value.trim().toLowerCase(),b=$('#med-batch').value.trim().toLowerCase();
+ return n&&b?db.meds.find(x=>x.name.toLowerCase()===n&&String(x.batch).toLowerCase()===b):null}
+function resolveBarcode(name,supplier,batch,typed){
+ typed=String(typed||'').trim();const nm=String(name||'').toLowerCase();
+ if(typed){
+  const clash=db.meds.find(x=>x.barcode.toLowerCase()===typed.toLowerCase()&&x.name.toLowerCase()!==nm);
+  if(clash)return{error:`Barcode ${typed} already belongs to ${clash.name}`};
+  return{barcode:typed,type:'mfr'}}
+ const same=nm&&db.meds.find(x=>x.name.toLowerCase()===nm&&x.bcType!=='auto'&&x.barcode);
+ if(same)return{barcode:same.barcode,type:'mfr',inherited:true};
+ const b=makeBarcode(supplier,batch);
+ return b?{barcode:b,type:'auto'}:{error:'Enter a valid batch number'}}
+function refreshBarcode(){
+ const ex=findBatch(),note=$('#batch-note');
+ const r=ex?{barcode:ex.barcode,type:ex.bcType==='auto'?'auto':'mfr'}:resolveBarcode($('#med-name').value.trim(),$('#med-supplier').value,$('#med-batch').value.trim(),$('#med-barcode').value);
+ drawBarcode($('#med-barcode-svg'),r.barcode||'');
+ const blue='background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af',orange='background:#fff7ed;border:1px solid #fed7aa;color:#9a3412',red='background:#fef2f2;border:1px solid #fecaca;color:#991b1b';
+ let css=blue,msg;
+ if(ex){css=orange;msg=`Batch ${ex.batch} of ${ex.name} already exists (${ex.qty} in stock, expiry ${ex.expiry}). The quantity you enter will be ADDED to it and barcode ${ex.barcode} is kept.`}
+ else if(r.error){css=$('#med-batch').value.trim()||$('#med-barcode').value.trim()?red:blue;msg=$('#med-batch').value.trim()||$('#med-barcode').value.trim()?r.error:'Type the batch number printed on the pack. If the pack has a barcode, scan it into the Manufacturer Barcode box; otherwise leave it blank and a batch label code is generated.'}
+ else if(r.type==='auto')msg=`No manufacturer barcode: batch label code ${r.barcode} will be generated. Scanning it selects exactly this batch. Print the label after saving.`;
+ else if(r.inherited)msg=`This medicine already uses barcode ${r.barcode}. The new batch shares it, and billing picks the earliest-expiry batch automatically (FEFO).`;
+ else msg=`Manufacturer barcode ${r.barcode}: shared by all batches of this medicine. Billing picks the earliest-expiry batch automatically (FEFO).`;
+ note.style.cssText=css+';border-radius:8px;padding:10px 12px;font-size:13px';note.textContent=msg}
+function printLabel(id){
+ const m=db.meds.find(x=>x.id===id);if(!m)return;
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');drawBarcode(svg,m.barcode);
+ const w=window.open('','_blank');if(!w)return toast('Allow pop-ups to print');
+ w.document.write(`<html><head><title>${esc(m.barcode)}</title></head><body style="font-family:Arial;text-align:center;margin:20px"><div style="display:inline-block;border:1px dashed #999;padding:10px 16px"><b>${esc(db.settings.name)}</b><br>${esc(m.name)}<br><small>Batch ${esc(m.batch)} · Exp ${m.expiry} · MRP ${fmt(m.price)}</small><br>${svg.outerHTML}</div><script>window.print()<\/script></body></html>`);
+ w.document.close()}
+
+/* ===== Camera barcode scanner (phone/laptop camera, no hardware scanner needed) ===== */
+let scanner=null;
+function closeScanner(){
+ $('#scan-modal').style.display='none';
+ if(scanner){const sc=scanner;scanner=null;sc.stop().then(()=>sc.clear()).catch(()=>{})}}
+function openScanner(onDone){
+ if(!window.Html5Qrcode)return toast('Scanner library not loaded. Check internet connection');
+ $('#scan-modal').style.display='flex';
+ const F=window.Html5QrcodeSupportedFormats,cfg={fps:10,qrbox:{width:280,height:140}};
+ if(F)cfg.formatsToSupport=[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.CODE_39,F.ITF,F.QR_CODE];
+ scanner=new Html5Qrcode('scan-reader');
+ scanner.start({facingMode:'environment'},cfg,txt=>{closeScanner();onDone(String(txt).trim())},()=>{})
+  .catch(()=>{closeScanner();toast('Camera not available. Allow camera permission and open the app over https')})}
+$('#scan-cancel').onclick=closeScanner;
+$('#scan-med').onclick=()=>openScanner(txt=>{$('#med-barcode').value=txt;refreshBarcode();toast('Scanned: '+txt)});
+$('#scan-bill').onclick=()=>openScanner(txt=>{const el=$('#bill-search');el.value=txt;el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))});
+$('#scan-search').onclick=()=>openScanner(txt=>{$('#barcode-input').value=txt;$('#barcode-form').dispatchEvent(new Event('submit',{cancelable:true}))});
 
 /* Navigation */
 function go(p){$$('.page').forEach(x=>x.classList.toggle('active',x.id===p));$$('.sidebar nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===p));render()}
@@ -49,13 +113,31 @@ $$('.sidebar nav a').forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.pa
 $$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 
 /* Inventory */
-$('#show-med').onclick=()=>$('#med-form').classList.toggle('hidden');
+$('#show-med').onclick=()=>{$('#med-form').classList.toggle('hidden');refreshBarcode()};
 $('#cancel-med').onclick=()=>$('#med-form').classList.add('hidden');
+$('#med-batch').oninput=refreshBarcode;
+$('#med-name').oninput=refreshBarcode;
+$('#med-barcode').oninput=refreshBarcode;
+$('#med-barcode').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('#med-category').focus()}};
+$('#med-supplier').onchange=refreshBarcode;
 $('#med-form').onsubmit=e=>{e.preventDefault();
  const v=i=>$('#med-'+i).value;
- const m={id:nextId(db.meds),name:v('name').trim(),barcode:v('barcode').trim(),category:v('category'),batch:v('batch').trim(),qty:+v('qty'),cost:+v('cost'),price:+v('price'),gst:+v('gst'),expiry:v('expiry'),min:+v('min'),rx:v('rx')==='yes'};
- db.meds.push(m);log('Stock added',`${m.name} (${m.batch}) opening quantity ${m.qty}`);
- save();e.target.reset();$('#med-gst').value=db.settings.defaultGst;e.target.classList.add('hidden');toast('Medicine saved');render()};
+ const name=v('name').trim(),batch=v('batch').trim(),qty=+v('qty');
+ if(!batch)return toast('Enter a valid batch number');
+ /* Same medicine + same batch = same lot: add to the existing row. A new batch number = new row. */
+ let m=db.meds.find(x=>x.name.toLowerCase()===name.toLowerCase()&&String(x.batch).toLowerCase()===batch.toLowerCase());
+ if(m){
+  m.qty+=qty;m.cost=+v('cost');m.price=+v('price');m.expiry=v('expiry');
+  log('Stock added',`${m.name} (${m.batch}) +${qty} added to existing batch, barcode ${m.barcode}`);
+ }else{
+  const r=resolveBarcode(name,v('supplier'),batch,v('barcode'));
+  if(r.error)return toast(r.error);
+  const barcode=r.barcode;
+  m={id:nextId(db.meds),name,barcode,bcType:r.type,supplier:v('supplier'),category:v('category'),batch,qty,cost:+v('cost'),price:+v('price'),gst:+v('gst'),expiry:v('expiry'),min:+v('min'),rx:v('rx')==='yes'};
+  db.meds.push(m);log('Stock added',`${m.name} (${m.batch}) opening quantity ${m.qty}, barcode ${m.barcode}`);
+ }
+ save();e.target.reset();$('#med-gst').value=db.settings.defaultGst;
+ refreshBarcode();e.target.classList.add('hidden');toast('Medicine saved. Barcode: '+m.barcode);render()};
 function delMed(id){const m=db.meds.find(x=>x.id===id);if(confirm('Delete this medicine?')){db.meds=db.meds.filter(x=>x.id!==id);log('Medicine deleted',`${m.name} (${m.batch})`);save();render()}}
 function adjMed(id){const m=db.meds.find(x=>x.id===id),v=prompt(`New quantity for ${m.name} (current ${m.qty}):`,m.qty);if(v===null)return;
  const n=parseInt(v);if(isNaN(n)||n<0)return toast('Invalid quantity');
@@ -65,7 +147,7 @@ $('#inventory-search').oninput=renderInventory;$('#stock-filter').onchange=rende
 function renderInventory(){
  const q=$('#inventory-search').value.toLowerCase(),f=$('#stock-filter').value,c=$('#cat-filter').value;
  const list=db.meds.filter(m=>(m.name+m.barcode).toLowerCase().includes(q)&&(!c||m.category===c)&&(f==='all'||(f==='low'?m.qty<=m.min:status(m)[0].includes('Exp'))));
- $('#inventory-table').innerHTML=rows(list.map(m=>`<tr><td>${esc(m.name)}${m.rx?' <span class="pill rx">Rx</span>':''}<br><small style="color:#9ca3af">${esc(m.category||'')}</small></td><td>${esc(m.barcode)}</td><td>${esc(m.batch)}</td><td>${m.qty}</td><td>${fmt(m.price)}</td><td>${m.expiry}</td><td>${pill(m)}</td><td><button class="secondary" onclick="adjMed(${m.id})">Adjust</button> <button class="danger-btn" onclick="delMed(${m.id})">Delete</button></td></tr>`),8,'No medicines found');
+ $('#inventory-table').innerHTML=rows(list.map(m=>`<tr><td>${esc(m.name)}${m.rx?' <span class="pill rx">Rx</span>':''}<br><small style="color:#9ca3af">${esc(m.category||'')}${m.supplier?' · '+esc(m.supplier):''}</small></td><td>${esc(m.barcode)}<br><small style="color:#9ca3af">${m.bcType==='auto'?'Batch label':'Shared (all batches)'}</small></td><td>${esc(m.batch)}</td><td>${m.qty}</td><td>${fmt(m.price)}</td><td>${m.expiry}</td><td>${pill(m)}</td><td><button class="secondary" onclick="printLabel(${m.id})">Label</button> <button class="secondary" onclick="adjMed(${m.id})">Adjust</button> <button class="danger-btn" onclick="delMed(${m.id})">Delete</button></td></tr>`),8,'No medicines found');
 }
 
 /* Billing */
@@ -73,11 +155,27 @@ let paidTouched=false;
 $('#amount-paid').oninput=()=>{paidTouched=true};
 $('#bill-search').oninput=()=>{
  const q=$('#bill-search').value.toLowerCase().trim();
- const list=q?db.meds.filter(m=>m.qty>0&&m.expiry>=today()&&(m.name+m.barcode).toLowerCase().includes(q)).slice(0,6):[];
- $('#bill-results').innerHTML=list.map(m=>`<div class="result-row"><span>${esc(m.name)}${m.rx?' <span class="pill rx">Rx</span>':''} <small>(${esc(m.batch)} · ${m.qty} in stock)</small></span><span>${fmt(m.price)} <button class="primary" onclick="addCart(${m.id})">Add</button></span></div>`).join('')};
-$('#bill-search').onkeydown=e=>{if(e.key==='Enter'){const m=db.meds.find(x=>x.barcode===e.target.value.trim());if(m){addCart(m.id);e.target.value='';$('#bill-results').innerHTML=''}}};
+ /* Only unexpired batches with stock; earliest expiry first (FEFO) */
+ const list=q?db.meds.filter(m=>m.qty>0&&m.expiry>=today()&&(m.name+m.barcode+m.batch).toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name)||a.expiry.localeCompare(b.expiry)).slice(0,8):[];
+ const seen=new Set();
+ $('#bill-results').innerHTML=list.map(m=>{const k=m.name.toLowerCase(),first=!seen.has(k);seen.add(k);
+  return `<div class="result-row"><span>${esc(m.name)}${m.rx?' <span class="pill rx">Rx</span>':''} <small>(Batch ${esc(m.batch)} · ${m.qty} in stock · Exp ${m.expiry})</small>${first?' <span class="pill ok">Sell first</span>':''}</span><span>${fmt(m.price)} <button class="primary" onclick="addCart(${m.id})">Add</button></span></div>`}).join('')};
+$('#bill-search').onkeydown=e=>{if(e.key!=='Enter')return;
+ const code=e.target.value.trim().toLowerCase();if(!code)return;
+ const hits=db.meds.filter(x=>x.barcode.toLowerCase()===code);
+ if(!hits.length)return;
+ /* Shared manufacturer barcode: earliest-expiry sellable batch (FEFO). Batch label: exactly that batch. */
+ const m=hits.filter(x=>x.qty>0&&x.expiry>=today()).sort((a,b)=>a.expiry.localeCompare(b.expiry))[0];
+ if(!m)return toast('All batches for this barcode are out of stock or expired');
+ addCart(m.id);e.target.value='';$('#bill-results').innerHTML='';
+ if(hits.length>1)toast(`FEFO: batch ${m.batch} (expiry ${m.expiry})`)};
 function addCart(id){const m=db.meds.find(x=>x.id===id),c=cart.find(x=>x.id===id);
- if(c){if(c.qty<m.qty)c.qty++;else toast('Not enough stock')}else cart.push({id,qty:1});renderCart()}
+ if(!c){cart.push({id,qty:1});return renderCart()}
+ if(c.qty<m.qty){c.qty++;return renderCart()}
+ /* This batch is fully in the cart: continue with the next batch of the same medicine (earliest expiry first) */
+ const inCart=x=>(cart.find(y=>y.id===x.id)||{qty:0}).qty;
+ const next=db.meds.filter(x=>x.name===m.name&&x.id!==id&&x.expiry>=today()&&x.qty>inCart(x)).sort((a,b)=>a.expiry.localeCompare(b.expiry))[0];
+ if(next){addCart(next.id);toast(`Batch ${m.batch} used up. Added batch ${next.batch}`)}else toast('Not enough stock')}
 function setQty(id,v){const m=db.meds.find(x=>x.id===id),c=cart.find(x=>x.id===id);c.qty=Math.max(1,Math.min(+v||1,m.qty));renderCart()}
 function rmCart(id){cart=cart.filter(x=>x.id!==id);renderCart()}
 function totals(){let s=0,t=0;cart.forEach(c=>{const m=db.meds.find(x=>x.id===c.id),l=m.price*c.qty;s+=l;t+=l*m.gst/100});return{s,t}}
@@ -109,11 +207,15 @@ $('#checkout').onclick=()=>{
 $('#purchase-form').onsubmit=e=>{e.preventDefault();
  const v=i=>$('#pur-'+i).value.trim(),qty=+v('qty'),cost=+v('cost'),mrp=+v('mrp');
  let m=db.meds.find(x=>x.name.toLowerCase()===v('name').toLowerCase()&&x.batch===v('batch'));
- if(m){m.qty+=qty;m.cost=cost;m.price=mrp;m.expiry=v('expiry')}
- else{m={id:nextId(db.meds),name:v('name'),barcode:'AUTO'+Date.now().toString().slice(-6),category:db.categories.includes('Other')?'Other':(db.categories[0]||''),batch:v('batch'),qty,cost,price:mrp,gst:db.settings.defaultGst,expiry:v('expiry'),min:10,rx:false};db.meds.push(m)}
+ if(m){m.qty+=qty;m.cost=cost;m.price=mrp;m.expiry=v('expiry');if(!m.supplier)m.supplier=v('supplier')}
+ else{
+  const r=resolveBarcode(v('name'),v('supplier'),v('batch'),'');
+  if(r.error)return toast(r.error);
+  const barcode=r.barcode;
+  m={id:nextId(db.meds),name:v('name'),barcode,bcType:r.type,supplier:v('supplier'),category:db.categories.includes('Other')?'Other':(db.categories[0]||''),batch:v('batch'),qty,cost,price:mrp,gst:db.settings.defaultGst,expiry:v('expiry'),min:10,rx:false};db.meds.push(m)}
  db.purchases.unshift({invoice:v('invoice'),supplier:v('supplier'),name:v('name'),batch:v('batch'),qty,total:qty*cost,date:today()});
- log('Stock added',`${m.name} (${m.batch}) +${qty} via purchase ${v('invoice')} from ${v('supplier')}`);
- save();e.target.reset();toast('Purchase recorded');render()};
+ log('Stock added',`${m.name} (${m.batch}) +${qty} via purchase ${v('invoice')} from ${v('supplier')}, barcode ${m.barcode}`);
+ save();e.target.reset();toast('Purchase recorded. Barcode: '+m.barcode);render()};
 
 /* Suppliers */
 $('#show-supplier').onclick=()=>$('#supplier-form').classList.toggle('hidden');
@@ -122,6 +224,8 @@ $('#supplier-form').onsubmit=e=>{e.preventDefault();const v=i=>$('#sup-'+i).valu
  save();e.target.reset();e.target.classList.add('hidden');toast('Supplier saved');render()};
 $('#supplier-search').oninput=renderSuppliers;
 function renderSuppliers(){const q=$('#supplier-search').value.toLowerCase();
+ fillSel($('#med-supplier'),db.suppliers.length?db.suppliers.map(s=>`<option>${esc(s.name)}</option>`).join(''):'<option>General</option>');
+ $('#sup-list').innerHTML=db.suppliers.map(s=>`<option value="${esc(s.name)}"></option>`).join('');
  $('#supplier-table').innerHTML=rows(db.suppliers.filter(s=>s.name.toLowerCase().includes(q)).map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.contact||'-')}</td><td>${esc(s.phone)}</td><td>${esc(s.email||'-')}</td><td>${esc(s.gstin||'-')}</td></tr>`),5)}
 
 /* Sales */
@@ -133,16 +237,17 @@ function printInv(no){const s=db.sales.find(x=>x.invoice===no),st=db.settings,w=
  const ig=i=>i.gst??((db.meds.find(m=>m.id===i.medId||m.name===i.name)||{}).gst??0);
  w.document.write(`<html><head><title>${no}</title><style>body{font-family:Arial;max-width:600px;margin:20px auto}table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #ddd;text-align:left}.r{text-align:right}</style></head><body><h2>${esc(st.name)}</h2><p>${esc(st.address)}<br>${esc(st.phone)} ${st.gstin?'· GSTIN '+esc(st.gstin):''} ${st.dlno?'· DL '+esc(st.dlno):''}</p><hr><p><b>${no}</b> · ${s.date}<br>Customer: ${esc(s.customer||'Walk-in')}</p><table><tr><th>Item</th><th>Qty</th><th>Price</th><th>GST</th><th class="r">Amount</th></tr>${s.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${fmt(i.price)}</td><td>${ig(i)}%</td><td class="r">${fmt(i.price*i.qty)}</td></tr>`).join('')}</table><p class="r">Subtotal: ${fmt(s.subtotal)}<br>GST: ${fmt(s.gst)}<br><b>Total: ${fmt(s.total)}</b><br>Paid: ${fmt(s.paid??s.total)} · Balance: ${fmt(s.balance||0)}</p><p>${esc(st.footer)}</p><script>window.print()<\/script></body></html>`);w.document.close()}
 
-/* Barcode */
+/* Barcode search (case-insensitive exact match) */
 $('#barcode-form').onsubmit=e=>{e.preventDefault();
- const m=db.meds.find(x=>x.barcode===$('#barcode-input').value.trim());
- $('#barcode-result').innerHTML=m?`<div class="result-row" style="text-align:left"><span><strong>${esc(m.name)}</strong><br><small>${esc(m.category)} · Batch ${esc(m.batch)} · Exp ${m.expiry}</small></span><span>${fmt(m.price)}<br>${m.qty} units ${pill(m)}</span></div>`:'<p class="empty">No medicine found for this barcode.</p>'};
+ const code=$('#barcode-input').value.trim().toLowerCase();
+ const hits=db.meds.filter(x=>x.barcode.toLowerCase()===code).sort((a,b)=>a.expiry.localeCompare(b.expiry));
+ const first=hits.find(x=>x.qty>0&&x.expiry>=today());
+ $('#barcode-result').innerHTML=hits.length?hits.map(m=>`<div class="result-row" style="text-align:left"><span><strong>${esc(m.name)}</strong>${m===first?' <span class="pill ok">Sell first</span>':''}<br><small>${esc(m.category)} · Batch ${esc(m.batch)}${m.supplier?' · '+esc(m.supplier):''} · Exp ${m.expiry}</small></span><span>${fmt(m.price)}<br>${m.qty} units ${pill(m)}</span></div>`).join(''):'<p class="empty">No medicine found for this barcode.</p>'};
 
 /* Reports */
 $('#export').onclick=()=>{
- const csv=['Name,Barcode,Category,Batch,Qty,Cost,MRP,GST,Expiry'].concat(db.meds.map(m=>[m.name,m.barcode,m.category,m.batch,m.qty,m.cost,m.price,m.gst,m.expiry].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(','))).join('\n');
+ const csv=['Name,Barcode,Supplier,Category,Batch,Qty,Cost,MRP,GST,Expiry'].concat(db.meds.map(m=>[m.name,m.barcode,m.supplier||'',m.category,m.batch,m.qty,m.cost,m.price,m.gst,m.expiry].map(x=>`"${String(x).replace(/"/g,'""')}"`).join(','))).join('\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='inventory.csv';a.click()};
-
 
 /* Charts (pure SVG, no libraries) */
 function barChart(data,money){
@@ -192,194 +297,77 @@ function renderCats(){
  fillSel($('#med-category'),o);fillSel($('#cat-filter'),'<option value="">All Categories</option>'+o);
  $('#cat-grid').innerHTML=db.categories.map((c,i)=>{const ms=db.meds.filter(m=>m.category===c);return `<div class="stat"><p>${esc(c)}</p><h2>${ms.length}</h2><small>${ms.reduce((a,m)=>a+m.qty,0)} units in stock</small><div style="margin-top:8px"><button class="danger-btn" onclick="delCat(${i})">Delete</button></div></div>`}).join('')}
 
-
 /* Customers - MySQL API integration */
+const API_BASE="http://localhost:5000/api";
 
-const API_BASE = "http://localhost:5000/api";
+$('#show-cust').onclick=()=>{$('#customer-form').classList.toggle('hidden')};
 
-$('#show-cust').onclick = () => {
-    $('#customer-form').classList.toggle('hidden');
-};
-
-async function loadCustomersFromMySQL() {
-    try {
-        const response = await fetch(`${API_BASE}/customers`);
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-            throw new Error(data.message || "Unable to load customers");
-        }
-
-        // Replace the browser customer list with MySQL records.
-        db.customers = data.customers.map(c => ({
-            ...c,
-            created: c.created_at || today()
-        }));
-
-        save();
-        renderCustomers();
-        fillBillSelects();
-    } catch (error) {
-        console.error("Customer loading error:", error);
-        toast("Could not load customers from MySQL");
-    }
+async function loadCustomersFromMySQL(){
+ try{
+  const response=await fetch(`${API_BASE}/customers`);
+  const data=await response.json();
+  if(!response.ok||!data.success)throw new Error(data.message||"Unable to load customers");
+  // Replace the browser customer list with MySQL records.
+  db.customers=data.customers.map(c=>({...c,created:c.created_at||today()}));
+  save();renderCustomers();fillBillSelects();
+ }catch(error){
+  console.error("Customer loading error:",error);
+  toast("Could not load customers from MySQL");
+ }
 }
 
-$('#customer-form').onsubmit = async e => {
-    e.preventDefault();
-
-    const v = i => $(`#cust-${i}`).value.trim();
-
-    const customer = {
-        name: v('name'),
-        phone: v('phone'),
-        email: v('email'),
-        address: v('address')
-    };
-
-    if (!customer.name || !customer.phone) {
-        return toast("Customer name and phone are required");
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/customers`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(customer)
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-            throw new Error(data.message || "Unable to save customer");
-        }
-
-        const savedCustomer = {
-            ...data.customer,
-            created: today()
-        };
-
-        // Use the ID generated by MySQL.
-        db.customers.unshift(savedCustomer);
-
-        log("Customer added", savedCustomer.name);
-        save();
-
-        e.target.reset();
-        e.target.classList.add('hidden');
-
-        renderCustomers();
-        fillBillSelects();
-
-        toast("Customer saved to MySQL successfully");
-    } catch (error) {
-        console.error("Customer saving error:", error);
-        toast(error.message || "Could not save customer");
-    }
+$('#customer-form').onsubmit=async e=>{
+ e.preventDefault();
+ const v=i=>$(`#cust-${i}`).value.trim();
+ const customer={name:v('name'),phone:v('phone'),email:v('email'),address:v('address')};
+ if(!customer.name||!customer.phone)return toast("Customer name and phone are required");
+ try{
+  const response=await fetch(`${API_BASE}/customers`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(customer)});
+  const data=await response.json();
+  if(!response.ok||!data.success)throw new Error(data.message||"Unable to save customer");
+  const savedCustomer={...data.customer,created:today()};
+  // Use the ID generated by MySQL.
+  db.customers.unshift(savedCustomer);
+  log("Customer added",savedCustomer.name);
+  save();e.target.reset();e.target.classList.add('hidden');
+  renderCustomers();fillBillSelects();
+  toast("Customer saved to MySQL successfully");
+ }catch(error){
+  console.error("Customer saving error:",error);
+  toast(error.message||"Could not save customer");
+ }
 };
 
-$('#customer-search').oninput = renderCustomers;
+$('#customer-search').oninput=renderCustomers;
 
-function renderCustomers() {
-    const q = $('#customer-search').value.toLowerCase();
-
-    const customers = db.customers.filter(c =>
-        `${c.name || ''} ${c.phone || ''}`.toLowerCase().includes(q)
-    );
-
-    $('#customer-table').innerHTML = rows(
-        customers.map(c => {
-            const ss = db.sales.filter(
-                s => String(s.customerId) === String(c.id)
-            );
-
-            return `<tr>
-                <td>${esc(c.name)}</td>
-                <td>${esc(c.phone)}</td>
-                <td>${esc(c.email || '-')}</td>
-                <td>${esc(c.address || '-')}</td>
-                <td>${ss.length}</td>
-                <td>${fmt(ss.reduce((a, s) => a + s.total, 0))}</td>
-                <td>${fmt(ss.reduce((a, s) => a + (s.balance || 0), 0))}</td>
-                <td>
-                    <button class="secondary"
-                        onclick="viewCust(${Number(c.id)})">
-                        History
-                    </button>
-                </td>
-            </tr>`;
-        }),
-        8,
-        'No customers yet'
-    );
-
-    $('#cust-list').innerHTML = db.customers
-        .map(c => `<option value="${esc(c.name)}"></option>`)
-        .join('');
+function renderCustomers(){
+ const q=$('#customer-search').value.toLowerCase();
+ const customers=db.customers.filter(c=>`${c.name||''} ${c.phone||''}`.toLowerCase().includes(q));
+ $('#customer-table').innerHTML=rows(customers.map(c=>{
+  const ss=db.sales.filter(s=>String(s.customerId)===String(c.id));
+  return `<tr><td>${esc(c.name)}</td><td>${esc(c.phone)}</td><td>${esc(c.email||'-')}</td><td>${esc(c.address||'-')}</td><td>${ss.length}</td><td>${fmt(ss.reduce((a,s)=>a+s.total,0))}</td><td>${fmt(ss.reduce((a,s)=>a+(s.balance||0),0))}</td><td><button class="secondary" onclick="viewCust(${Number(c.id)})">History</button></td></tr>`;
+ }),8,'No customers yet');
+ $('#cust-list').innerHTML=db.customers.map(c=>`<option value="${esc(c.name)}"></option>`).join('');
 }
 
-function viewCust(id) {
-    const c = db.customers.find(x => String(x.id) === String(id));
-
-    if (!c) {
-        return toast("Customer not found");
-    }
-
-    const ss = db.sales.filter(
-        s => String(s.customerId) === String(id)
-    );
-
-    const b = $('#cust-history');
-    b.classList.remove('hidden');
-
-    b.innerHTML = `<div class="panel-header">
-        <h3>Purchase History: ${esc(c.name)}</h3>
-        <button class="secondary"
-            onclick="this.closest('.panel').classList.add('hidden')">
-            Close
-        </button>
-    </div>
-
-    <p style="color:#6b7280;margin-bottom:10px">
-        ${esc(c.phone)} · ${esc(c.email || '-')} · ${esc(c.address || '-')}
-    </p>
-
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>Invoice</th>
-                    <th>Date</th>
-                    <th>Items</th>
-                    <th>Total</th>
-                    <th>Paid</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rows(ss.map(s => `<tr>
-                    <td>${esc(s.invoice)}</td>
-                    <td>${esc(s.date)}</td>
-                    <td>${esc(s.items.map(i =>
-                        i.name + ' ×' + i.qty
-                    ).join(', '))}</td>
-                    <td>${fmt(s.total)}</td>
-                    <td>${fmt(s.paid ?? s.total)}</td>
-                    <td>${sp(pstat(s))}</td>
-                </tr>`), 6, 'No purchases yet')}
-            </tbody>
-        </table>
-    </div>`;
-
-    b.scrollIntoView({ behavior: 'smooth' });
+function viewCust(id){
+ const c=db.customers.find(x=>String(x.id)===String(id));
+ if(!c)return toast("Customer not found");
+ const ss=db.sales.filter(s=>String(s.customerId)===String(id));
+ const b=$('#cust-history');
+ b.classList.remove('hidden');
+ b.innerHTML=`<div class="panel-header"><h3>Purchase History: ${esc(c.name)}</h3><button class="secondary" onclick="this.closest('.panel').classList.add('hidden')">Close</button></div>
+ <p style="color:#6b7280;margin-bottom:10px">${esc(c.phone)} · ${esc(c.email||'-')} · ${esc(c.address||'-')}</p>
+ <div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Items</th><th>Total</th><th>Paid</th><th>Status</th></tr></thead><tbody>
+ ${rows(ss.map(s=>`<tr><td>${esc(s.invoice)}</td><td>${esc(s.date)}</td><td>${esc(s.items.map(i=>i.name+' ×'+i.qty).join(', '))}</td><td>${fmt(s.total)}</td><td>${fmt(s.paid??s.total)}</td><td>${sp(pstat(s))}</td></tr>`),6,'No purchases yet')}
+ </tbody></table></div>`;
+ b.scrollIntoView({behavior:'smooth'});
 }
 
 /* Returns */
 $('#return-form').onsubmit=e=>{e.preventDefault();
  const type=$('#ret-type').value,ref=$('#ret-ref').value.trim(),m=db.meds.find(x=>String(x.id)===$('#ret-med').value),qty=+$('#ret-qty').value,reason=$('#ret-reason').value.trim();
- if(!m)return toast('Select a medicine');let amount;
+ if(!m)return toast('Select a medicine');let amount,refRef;
  if(type==='sales'){
   const sale=db.sales.find(s=>s.invoice.toLowerCase()===ref.toLowerCase());if(!sale)return toast('Invoice not found');
   const it=sale.items.find(i=>i.medId===m.id||i.name===m.name);if(!it)return toast('Medicine is not on that invoice');
@@ -388,10 +376,10 @@ $('#return-form').onsubmit=e=>{e.preventDefault();
   amount=qty*it.price*(1+(it.gst||0)/100);m.qty+=qty;
   log('Billing correction',`Sales return on ${sale.invoice}: ${m.name} ×${qty}, refund ${fmt(amount)} (${reason})`);
   log('Stock added',`${m.name} (${m.batch}) +${qty} from sales return`);
-  var refRef=sale.invoice;
+  refRef=sale.invoice;
  }else{
   if(qty>m.qty)return toast('Not enough stock to return');
-  amount=qty*m.cost;m.qty-=qty;var refRef=ref;
+  amount=qty*m.cost;m.qty-=qty;refRef=ref;
   log('Stock deducted',`Supplier return to ${ref}: ${m.name} (${m.batch}) -${qty} (${reason})`);
  }
  db.returns.unshift({id:'RET-'+padN(db.returns.length+1,3),type,ref:refRef,medId:m.id,name:m.name,qty,amount,reason,date:today(),status:type==='sales'?'Pending Refund':'Credit Pending'});
@@ -499,217 +487,8 @@ function render(){
  $('#report-value').textContent=fmt(inv);
  $('#report-table').innerHTML=rows(db.meds.map(m=>`<tr><td>${esc(m.name)}</td><td>${esc(m.batch)}</td><td>${m.qty}</td><td>${fmt(m.qty*m.cost)}</td><td>${m.expiry}</td><td>${pill(m)}</td></tr>`),6);
  $('#user-name').textContent=db.settings.user;
- renderTax();renderCats();fillBillSelects();renderInventory();renderSuppliers();renderSales();renderCart();renderCharts();
+ renderTax();renderCats();renderSuppliers();fillBillSelects();renderInventory();renderSales();renderCart();renderCharts();
  renderCustomers();renderReturns();renderRx();renderPayments();renderNotes();renderSettings();renderAudit();
 }
 render();
 loadCustomersFromMySQL();
-/* ===== MySQL: medicines, suppliers, prescriptions, purchases ===== */
-async function api(path, opts = {}) {
-    const r = await fetch(API_BASE + path, {
-        headers: { "Content-Type": "application/json" }, ...opts
-    });
-    const d = await r.json();
-    if (!r.ok || !d.success) throw new Error(d.message || "Request failed");
-    return d;
-}
-
-async function loadFromMySQL() {
-    try {
-        const [m, s, p, pu] = await Promise.all([
-            api("/medicines"), api("/suppliers"), api("/prescriptions"), api("/purchases")
-        ]);
-        db.meds = m.medicines.map(x => ({ ...x, rx: !!x.rx }));
-        db.suppliers = s.suppliers;
-        db.prescriptions = p.prescriptions;
-        db.purchases = pu.purchases;
-        save();
-        render();
-    } catch (err) {
-        console.error(err);
-        toast("Could not load data from MySQL");
-    }
-}
-
-/* Inventory */
-$('#med-form').onsubmit = async e => {
-    e.preventDefault();
-    const v = i => $('#med-' + i).value;
-    const body = {
-        name: v('name').trim(), barcode: v('barcode').trim(), category: v('category'),
-        batch: v('batch').trim(), qty: +v('qty'), cost: +v('cost'), price: +v('price'),
-        gst: +v('gst'), expiry: v('expiry'), min: +v('min'), rx: v('rx') === 'yes'
-    };
-    try {
-        await api('/medicines', { method: 'POST', body: JSON.stringify(body) });
-        log('Stock added', `${body.name} (${body.batch}) opening quantity ${body.qty}`);
-        e.target.reset();
-        $('#med-gst').value = db.settings.defaultGst;
-        e.target.classList.add('hidden');
-        toast('Medicine saved to MySQL');
-        await loadFromMySQL();
-    } catch (err) { toast(err.message); }
-};
-
-async function delMed(id) {
-    const m = db.meds.find(x => x.id === id);
-    if (!m || !confirm('Delete this medicine?')) return;
-    try {
-        await api('/medicines/' + id, { method: 'DELETE' });
-        log('Medicine deleted', `${m.name} (${m.batch})`);
-        await loadFromMySQL();
-    } catch (err) { toast(err.message); }
-}
-
-async function adjMed(id) {
-    const m = db.meds.find(x => x.id === id);
-    const v = prompt(`New quantity for ${m.name} (current ${m.qty}):`, m.qty);
-    if (v === null) return;
-    const n = parseInt(v);
-    if (isNaN(n) || n < 0) return toast('Invalid quantity');
-    const r = prompt('Reason for adjustment:', 'Stock count correction');
-    if (!r) return toast('Reason is required');
-    try {
-        await api('/medicines/' + id, { method: 'PUT', body: JSON.stringify({ qty: n }) });
-        log('Stock adjusted', `${m.name} (${m.batch}): ${m.qty} to ${n}. ${r}`);
-        await loadFromMySQL();
-    } catch (err) { toast(err.message); }
-}
-
-async function togRx(id) {
-    const m = db.meds.find(x => x.id === id);
-    try {
-        await api('/medicines/' + id, { method: 'PUT', body: JSON.stringify({ rx: !m.rx }) });
-        log('Rx requirement changed', `${m.name}: ${!m.rx ? 'now requires' : 'no longer requires'} prescription`);
-        await loadFromMySQL();
-    } catch (err) { toast(err.message); }
-}
-
-/* Billing: after a sale, push the reduced stock to MySQL */
-const _localCheckout = $('#checkout').onclick;
-$('#checkout').onclick = async () => {
-    const before = db.sales.length;
-    _localCheckout();
-    if (db.sales.length > before) {
-        printInv(db.sales[0].invoice);   // <-- new line: opens the bill
-        await Promise.all(db.sales[0].items.map(i => {
-            const m = db.meds.find(x => x.id === i.medId);
-            return m && api('/medicines/' + m.id, { method: 'PUT', body: JSON.stringify({ qty: m.qty }) }).catch(console.error);
-        }));
-    }
-};
-
-/* Suppliers */
-$('#supplier-form').onsubmit = async e => {
-    e.preventDefault();
-    const v = i => $('#sup-' + i).value.trim();
-    try {
-        await api('/suppliers', { method: 'POST', body: JSON.stringify({
-            name: v('name'), contact: v('contact'), phone: v('phone'),
-            email: v('email'), gstin: v('gstin'), address: v('address')
-        })});
-        log('Supplier added', v('name'));
-        e.target.reset();
-        e.target.classList.add('hidden');
-        toast('Supplier saved to MySQL');
-        await loadFromMySQL();
-    } catch (err) { toast(err.message); }
-};
-
-/* Prescriptions */
-$('#rx-form').onsubmit = async e => {
-    e.preventDefault();
-    const v = i => $('#rx-' + i).value.trim();
-    try {
-        await api('/prescriptions', { method: 'POST', body: JSON.stringify({
-            patient: v('patient'), doctor: v('doctor'), reg: v('reg'),
-            date: v('date'), valid: v('valid'), meds: v('meds')
-        })});
-        log('Prescription recorded', `${v('patient')} (Dr. ${v('doctor')})`);
-        e.target.reset();
-        e.target.classList.add('hidden');
-        toast('Prescription saved to MySQL');
-        await loadFromMySQL();
-    } catch (err) { toast(err.message); }
-};
-
-/* Purchases */
-$('#purchase-form').onsubmit = async e => {
-    e.preventDefault();
-    const v = i => $('#pur-' + i).value.trim();
-    try {
-        await api('/purchases', { method: 'POST', body: JSON.stringify({
-            invoice: v('invoice'), supplier: v('supplier'), name: v('name'), batch: v('batch'),
-            qty: +v('qty'), cost: +v('cost'), mrp: +v('mrp'), expiry: v('expiry')
-        })});
-        log('Stock added', `${v('name')} (${v('batch')}) +${v('qty')} via purchase ${v('invoice')}`);
-        e.target.reset();
-        toast('Purchase saved to MySQL');
-        await loadFromMySQL();
-    } catch (err) { toast(err.message); }
-};
-
-loadFromMySQL();
-/* ===== Thermal receipt 80mm, black & white ===== */
-function printInv(no){
-  const s=db.sales.find(x=>x.invoice===no),st=db.settings,w=window.open('','_blank');
-  if(!w)return toast('Allow pop-ups to print');
-  const ig=i=>i.gst??((db.meds.find(m=>m.id===i.medId||m.name===i.name)||{}).gst??0);
-  const status=pstat(s)[0].toUpperCase();
-  const half=s.gst/2;
-  const qtyTotal=s.items.reduce((a,i)=>a+i.qty,0);
-  const items=s.items.map(i=>`
-    <div class="it">
-      <div class="nm">${esc(i.name)}</div>
-      <div class="ln"><span>${i.qty} x ${fmt(i.price)} <small>(GST ${ig(i)}%)</small></span><b>${fmt(i.price*i.qty)}</b></div>
-    </div>`).join('');
-
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${no}</title>
-  <style>
-    @page{size:80mm auto;margin:0}
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{width:72mm;margin:0 auto;padding:4mm 0;font-family:'Courier New',monospace;font-size:12px;line-height:1.35;color:#000;background:#fff}
-    .c{text-align:center}
-    h1{font-size:17px;letter-spacing:.5px;text-transform:uppercase}
-    .sm{font-size:11px}
-    hr{border:0;border-top:1px dashed #000;margin:6px 0}
-    hr.solid{border-top:1px solid #000}
-    .row{display:flex;justify-content:space-between}
-    .it{margin-bottom:5px}
-    .it .nm{font-weight:700}
-    .ln{display:flex;justify-content:space-between}
-    small{font-size:10px}
-    .grand{font-size:16px;font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000;padding:4px 0;margin:4px 0}
-    .status{margin:6px auto;width:max-content;border:2px solid #000;padding:2px 14px;font-weight:700;letter-spacing:2px}
-    @media screen{body{margin:10px auto;border:1px dashed #999;padding:4mm}}
-  </style></head><body>
-    <div class="c">
-      <h1>${esc(st.name)}</h1>
-      <div class="sm">${esc(st.address||'')}</div>
-      <div class="sm">${st.phone?'Ph: '+esc(st.phone):''}</div>
-      ${st.gstin?`<div class="sm">GSTIN: ${esc(st.gstin)}</div>`:''}
-      ${st.dlno?`<div class="sm">DL No: ${esc(st.dlno)}</div>`:''}
-    </div>
-    <hr>
-    <div class="row"><span>Bill: <b>${no}</b></span><span>${s.date}</span></div>
-    <div>Customer: ${esc(s.customer||'Walk-in')}</div>
-    <div>Payment: ${esc(s.payment)}</div>
-    <hr class="solid">
-    ${items}
-    <hr>
-    <div class="row"><span>Items / Qty</span><span>${s.items.length} / ${qtyTotal}</span></div>
-    <div class="row"><span>Subtotal</span><span>${fmt(s.subtotal)}</span></div>
-    <div class="row"><span>CGST</span><span>${fmt(half)}</span></div>
-    <div class="row"><span>SGST</span><span>${fmt(half)}</span></div>
-    <div class="row grand"><span>TOTAL</span><span>${fmt(s.total)}</span></div>
-    <div class="row"><span>Paid</span><span>${fmt(s.paid??s.total)}</span></div>
-    ${(s.balance||0)>0.005?`<div class="row"><b>Balance Due</b><b>${fmt(s.balance)}</b></div>`:''}
-    <div class="status">${status}</div>
-    <hr>
-    <div class="c sm">${esc(st.footer||'Thank you! Get well soon.')}</div>
-    <div class="c sm">Medicines once sold will not be taken back<br>without a valid bill.<br>E mail:www.medicare.com</div>
-    <div class="c sm" style="margin-top:6px">*** Thank you, visit again ***</div>
-    <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
-  </body></html>`);
-  w.document.close();
-}

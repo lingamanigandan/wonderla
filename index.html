@@ -107,9 +107,7 @@
 
 <main class="main">
 <section class="page active" id="dashboard">
-  <div class="heading"><div><h2>Welcome back, <span id="user-name">Mohanraj</span>!</h2><p>
-
-  </p></div><button class="primary" data-go="billing">+ New Sale</button></div>
+  <div class="heading"><div><h2>Welcome back, <span id="user-name">Mohanraj</span>!</h2><p></p></div><button class="primary" data-go="billing">+ New Sale</button></div>
   <div class="stats">
     <div class="stat"><p>Total Medicines</p><h2 id="total-medicines">0</h2><small>Registered products</small></div>
     <div class="stat"><p>Available Stock</p><h2 id="total-stock">0</h2><small>Total units</small></div>
@@ -138,12 +136,19 @@
 
 <section class="page" id="inventory">
   <div class="heading"><div><h2>Medicine Inventory</h2><p>Manage medicines, batches and expiry dates.</p></div><button class="primary" id="show-med">+ Add Medicine</button></div>
+
+  <!-- Add Medicine: barcode is auto-generated from Supplier + Batch Number -->
   <form id="med-form" class="panel form-grid hidden">
     <h3 class="full">Add New Medicine</h3>
     <label>Medicine Name<input id="med-name" required></label>
-    <label>Barcode<input id="med-barcode" required></label>
+    <label>Supplier<select id="med-supplier" required></select></label>
+    <label>Batch Number<input id="med-batch" required placeholder="e.g. PCM01"></label>
+    <label>Manufacturer Barcode (optional)<input id="med-barcode" placeholder="Scan pack barcode, or leave blank to auto-generate"><button type="button" class="secondary" id="scan-med" style="margin-top:6px">📷 Scan with camera</button></label>
+    <div class="full" style="text-align:center">
+      <svg id="med-barcode-svg" style="max-width:100%"></svg>
+    </div>
+    <div class="full" id="batch-note" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;font-size:13px;color:#1e40af"></div>
     <label>Category<select id="med-category" required></select></label>
-    <label>Batch Number<input id="med-batch" required></label>
     <label>Quantity<input id="med-qty" type="number" min="0" required></label>
     <label>Purchase Price (₹)<input id="med-cost" type="number" min="0" step=".01" required></label>
     <label>MRP (₹)<input id="med-price" type="number" min=".01" step=".01" required></label>
@@ -153,13 +158,14 @@
     <label>Minimum Stock<input id="med-min" type="number" min="0" value="10" required></label>
     <div class="full form-buttons"><button class="primary">Save Medicine</button><button type="button" class="secondary" id="cancel-med">Cancel</button></div>
   </form>
+
   <div class="panel"><div class="toolbar"><input id="inventory-search" placeholder="Search medicine or barcode..."><select id="cat-filter"></select><select id="stock-filter"><option value="all">All Stock</option><option value="low">Low Stock</option><option value="expiry">Expiry Alerts</option></select></div>
     <div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Barcode</th><th>Batch</th><th>Quantity</th><th>MRP</th><th>Expiry</th><th>Status</th><th>Action</th></tr></thead><tbody id="inventory-table"></tbody></table></div></div>
 </section>
 
 <section class="page" id="billing">
   <div class="heading"><div><h2>Billing / POS</h2><p>Create sales invoices and deduct inventory.</p></div></div>
-  <div class="panel"><label class="field-label">Search medicine or scan barcode<input id="bill-search" placeholder="Enter medicine name or barcode..."></label><div id="bill-results"></div></div>
+  <div class="panel"><label class="field-label">Search medicine or scan barcode<input id="bill-search" placeholder="Enter medicine name or barcode..."></label><button type="button" class="secondary" id="scan-bill" style="margin-top:8px">📷 Scan with camera</button><div id="bill-results"></div></div>
   <div class="panel"><h3>Current Cart</h3><div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Quantity</th><th>Price</th><th>GST</th><th>Total</th><th>Action</th></tr></thead><tbody id="cart-table"></tbody></table></div>
     <div class="summary">
       <p>Subtotal <strong id="subtotal">₹0.00</strong></p><p>GST <strong id="tax">₹0.00</strong></p><p class="total">Grand Total <strong id="grand-total">₹0.00</strong></p>
@@ -175,7 +181,7 @@
   <div class="heading"><div><h2>Purchase Management</h2><p>Receive medicine stock from suppliers.</p></div></div>
   <form id="purchase-form" class="panel form-grid">
     <h3 class="full">Record Purchase</h3>
-    <label>Supplier Name<input id="pur-supplier" required></label>
+    <label>Supplier Name<input id="pur-supplier" list="sup-list" required></label><datalist id="sup-list"></datalist>
     <label>Supplier Invoice Number<input id="pur-invoice" required></label>
     <label>Medicine Name<input id="pur-name" required></label>
     <label>Batch Number<input id="pur-batch" required></label>
@@ -195,8 +201,9 @@
     <label>Supplier Name<input id="sup-name" required></label><label>Contact Person<input id="sup-contact"></label>
     <label>Phone<input id="sup-phone" required></label><label>Email<input id="sup-email" type="email"></label>
     <label>GSTIN<input id="sup-gstin"></label><label>Address<input id="sup-address"></label>
-<div class="full form-buttons"><button class="primary">Save Supplier</button><button type="button" class="secondary" id="cancel-supplier">Cancel</button></div>  </form>
-  <div class="panel"><div class="toolbar"><input id="supplier-search" placeholder="Search suppliers..."></div><div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>Email</th><th>GSTIN</th><th>Action</th></tr></thead><tbody id="supplier-table"></tbody></table></div></div>
+    <div class="full"><button class="primary">Save Supplier</button></div>
+  </form>
+  <div class="panel"><div class="toolbar"><input id="supplier-search" placeholder="Search suppliers..."></div><div class="table-wrap"><table><thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>Email</th><th>GSTIN</th></tr></thead><tbody id="supplier-table"></tbody></table></div></div>
 </section>
 
 <section class="page" id="sales">
@@ -207,7 +214,7 @@
 <section class="page" id="barcode">
   <div class="heading"><div><h2>Barcode Search</h2><p>Scan or enter a medicine barcode.</p></div></div>
   <div class="panel barcode-box"><div class="barcode-symbol"><span class="material-symbols-outlined">barcode_scanner</span></div><h3>Find a Medicine</h3><p>Use a USB barcode scanner or type a barcode.</p>
-    <form id="barcode-form" class="barcode-form"><input id="barcode-input" placeholder="Enter barcode..." required><button class="primary">Search</button></form><div id="barcode-result"></div></div>
+    <form id="barcode-form" class="barcode-form"><input id="barcode-input" placeholder="Enter barcode..." required><button class="primary">Search</button><button type="button" class="secondary" id="scan-search">📷 Scan</button></form><div id="barcode-result"></div></div>
 </section>
 
 <section class="page" id="reports">
@@ -286,7 +293,7 @@
 </section>
 
 <section class="page" id="notifications">
-  <div class="heading"><div><h2>Notifications</h2><p>Low-stock, expiry, return purchase and payment alerts.</p></div><select id="note-filter" style="max-width:200px"><option value="">All Alerts</option><option>Low Stock</option><option>Expiry</option><option>Purchase</option><option>Payment</option></select></div>
+  <div class="heading"><div><h2>Notifications</h2><p>Low-stock, expiry, purchase and payment alerts.</p></div><select id="note-filter" style="max-width:200px"><option value="">All Alerts</option><option>Low Stock</option><option>Expiry</option><option>Purchase</option><option>Payment</option></select></div>
   <div class="panel" id="note-list"></div>
 </section>
 
@@ -315,9 +322,20 @@
 </main>
 </div>
 </div>
+<!-- Camera barcode scanner (works on mobile over https or localhost) -->
+<div id="scan-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:16px">
+  <div style="background:#fff;border-radius:12px;padding:14px;width:100%;max-width:420px">
+    <h3 style="margin:0 0 8px">Scan barcode</h3>
+    <div id="scan-reader" style="width:100%"></div>
+    <p style="font-size:13px;color:#6b7280;margin:8px 0">Point the camera at the barcode on the pack and hold steady.</p>
+    <button type="button" class="secondary" id="scan-cancel" style="width:100%;justify-content:center">Cancel</button>
+  </div>
+</div>
 <div id="toast" role="status"></div>
-<div id="form-success" class="hidden">Thank you! We'll contact you shortly.</div>
 
+<!-- Barcode image library (Code 128) -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="auth.js"></script>
 <script src="script.js"></script>
 </body>
