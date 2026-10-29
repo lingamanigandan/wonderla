@@ -13,6 +13,15 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="login.css">
+<style>
+/* Light logo watermark behind the dashboard/content area.
+   Change opacity (0.04 very light ... 0.12 stronger) or size to taste. */
+.main::before{
+  content:"";position:fixed;top:0;right:0;bottom:0;left:var(--sbw,278px);
+  background:url("mmm.png") center center / min(60vw,560px) no-repeat;
+  opacity:.18;pointer-events:none;z-index:5;
+}
+</style>
 </head>
 <body>
 
@@ -92,7 +101,6 @@
     <a href="#" data-page="returns"><span class="material-symbols-outlined">assignment_return</span>Returns</a>
     <a href="#" data-page="prescriptions"><span class="material-symbols-outlined">clinical_notes</span>Prescriptions</a>
     <a href="#" data-page="payments"><span class="material-symbols-outlined">payments</span>Payments</a>
-    <a href="#" data-page="tax"><span class="material-symbols-outlined">percent</span>Tax</a>
     <a href="#" data-page="notifications"><span class="material-symbols-outlined">notifications</span>Notifications<span class="badge hidden" id="notif-badge">0</span></a>
     <a href="#" data-page="settings"><span class="material-symbols-outlined">settings</span>Settings</a>
     <a href="#" data-page="audit"><span class="material-symbols-outlined">policy</span>Audit &amp; Compliance</a>
@@ -143,7 +151,7 @@
     <label>Medicine Name<input id="med-name" required></label>
     <label>Supplier<select id="med-supplier" required></select></label>
     <label>Batch Number<input id="med-batch" required placeholder="e.g. PCM01"></label>
-    <label>Manufacturer Barcode (optional)<input id="med-barcode" placeholder="Scan pack barcode, or leave blank to auto-generate"><button type="button" class="secondary" id="scan-med" style="margin-top:6px">📷 Scan with camera</button></label>
+    <label>Manufacturer Barcode (optional)<input id="med-barcode" placeholder="Click here, then scan the pack with your scanner (or leave blank)"></label>
     <div class="full" style="text-align:center">
       <svg id="med-barcode-svg" style="max-width:100%"></svg>
     </div>
@@ -165,14 +173,16 @@
 
 <section class="page" id="billing">
   <div class="heading"><div><h2>Billing / POS</h2><p>Create sales invoices and deduct inventory.</p></div></div>
-  <div class="panel"><label class="field-label">Search medicine or scan barcode<input id="bill-search" placeholder="Enter medicine name or barcode..."></label><button type="button" class="secondary" id="scan-bill" style="margin-top:8px">📷 Scan with camera</button><div id="bill-results"></div></div>
+  <div class="panel"><label class="field-label">Search medicine or scan barcode<input id="bill-search" placeholder="Scan barcode with your scanner, or type medicine name..."></label><div id="bill-results"></div></div>
   <div class="panel"><h3>Current Cart</h3><div class="table-wrap"><table><thead><tr><th>Medicine</th><th>Quantity</th><th>Price</th><th>GST</th><th>Total</th><th>Action</th></tr></thead><tbody id="cart-table"></tbody></table></div>
     <div class="summary">
       <p>Subtotal <strong id="subtotal">₹0.00</strong></p><p>GST <strong id="tax">₹0.00</strong></p><p class="total">Grand Total <strong id="grand-total">₹0.00</strong></p>
+      <label class="field-label">Tax (GST)<select id="bill-tax"></select></label>
       <label class="field-label">Customer<select id="bill-customer"></select></label>
       <label class="field-label hidden" id="rx-box">Prescription (required for Rx items)<select id="bill-rx"></select></label>
       <label class="field-label">Payment Method<select id="payment"><option>Cash</option><option>UPI</option><option>Card</option></select></label>
       <label class="field-label">Amount Received (₹)<input id="amount-paid" type="number" min="0" step=".01"></label>
+      <label class="field-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="print-after" checked style="width:auto;margin:0"> Print bill after sale</label>
       <button class="primary" id="checkout" style="justify-content:center">Complete Sale</button>
     </div></div>
 </section>
@@ -214,7 +224,7 @@
 <section class="page" id="barcode">
   <div class="heading"><div><h2>Barcode Search</h2><p>Scan or enter a medicine barcode.</p></div></div>
   <div class="panel barcode-box"><div class="barcode-symbol"><span class="material-symbols-outlined">barcode_scanner</span></div><h3>Find a Medicine</h3><p>Use a USB barcode scanner or type a barcode.</p>
-    <form id="barcode-form" class="barcode-form"><input id="barcode-input" placeholder="Enter barcode..." required><button class="primary">Search</button><button type="button" class="secondary" id="scan-search">📷 Scan</button></form><div id="barcode-result"></div></div>
+    <form id="barcode-form" class="barcode-form"><input id="barcode-input" placeholder="Enter barcode..." required><button class="primary">Search</button></form><div id="barcode-result"></div></div>
 </section>
 
 <section class="page" id="reports">
@@ -285,13 +295,6 @@
   <div class="panel"><h3>Payment History</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Method</th><th>Amount</th></tr></thead><tbody id="pay-table"></tbody></table></div></div>
 </section>
 
-<section class="page" id="tax">
-  <div class="heading"><div><h2>Tax Management</h2><p>Configure applicable GST rates and invoice tax calculations.</p></div></div>
-  <div class="panel"><h3>GST Slabs</h3><div id="slab-chips"></div>
-    <form id="tax-form" class="toolbar" style="margin-top:8px"><input id="tax-rate" type="number" min="0" max="100" step="0.01" placeholder="New GST rate (%)" required style="max-width:240px"><button class="primary">+ Add Slab</button></form></div>
-  <div class="panel"><h3>GST Collected on Sales (by rate)</h3><div class="table-wrap"><table><thead><tr><th>GST Rate</th><th>Taxable Value</th><th>CGST</th><th>SGST</th><th>Total GST</th></tr></thead><tbody id="tax-table"></tbody></table></div></div>
-</section>
-
 <section class="page" id="notifications">
   <div class="heading"><div><h2>Notifications</h2><p>Low-stock, expiry, purchase and payment alerts.</p></div><select id="note-filter" style="max-width:200px"><option value="">All Alerts</option><option>Low Stock</option><option>Expiry</option><option>Purchase</option><option>Payment</option></select></div>
   <div class="panel" id="note-list"></div>
@@ -303,7 +306,7 @@
     <h3 class="full">Pharmacy Details</h3>
     <label>Pharmacy Name<input id="set-name" required></label><label>Phone<input id="set-phone"></label>
     <label>Address<input id="set-address"></label><label>GSTIN<input id="set-gstin"></label>
-    <label>Drug Licence No.<input id="set-dlno"></label><label>Logged-in User<input id="set-user" required></label>
+    <label>Email<input id="set-email"></label><label>Drug Licence No.<input id="set-dlno"></label><label>Logged-in User<input id="set-user" required></label>
     <h3 class="full">Invoice Format</h3>
     <label>Invoice Prefix<input id="set-prefix" required></label><label>Invoice Footer Note<input id="set-footer"></label>
     <h3 class="full">Tax Configuration</h3>
@@ -322,20 +325,10 @@
 </main>
 </div>
 </div>
-<!-- Camera barcode scanner (works on mobile over https or localhost) -->
-<div id="scan-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:16px">
-  <div style="background:#fff;border-radius:12px;padding:14px;width:100%;max-width:420px">
-    <h3 style="margin:0 0 8px">Scan barcode</h3>
-    <div id="scan-reader" style="width:100%"></div>
-    <p style="font-size:13px;color:#6b7280;margin:8px 0">Point the camera at the barcode on the pack and hold steady.</p>
-    <button type="button" class="secondary" id="scan-cancel" style="width:100%;justify-content:center">Cancel</button>
-  </div>
-</div>
 <div id="toast" role="status"></div>
 
 <!-- Barcode image library (Code 128) -->
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="auth.js"></script>
 <script src="script.js"></script>
 </body>

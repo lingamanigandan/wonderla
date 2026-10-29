@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp, fmt, today, addDays, padN, nextId, pays, pstat, gstOf, form, download, csv, notes, Pill, Rows } from './store.jsx';
+import { apiGet, apiPost } from './api.jsx';
 
 export const Sp = Pill;
 const Head = ({ title, sub, children }) => <div className="heading"><div><h2>{title}</h2><p>{sub}</p></div>{children}</div>;
@@ -21,17 +22,61 @@ export function Categories() {
 /* ---------- Customers ---------- */
 export function Customers() {
   const { db, mutate, toast } = useApp();
+  const [customers, setCustomers] = useState([]), [loading, setLoading] = useState(true);
+  const [error, setError] = useState(''), [saving, setSaving] = useState(false);
   const [show, setShow] = useState(false), [q, setQ] = useState(''), [hist, setHist] = useState(null);
-  const submit = e => { e.preventDefault(); const v = form(e);
-    mutate((d, log) => { d.customers.push({ id: nextId(d.customers), name: v.name.trim(), phone: v.phone.trim(), email: v.email.trim(), address: v.address.trim(), created: today() }); log('Customer added', v.name.trim()); });
-    e.target.reset(); setShow(false); toast('Customer saved'); };
-  const h = db.customers.find(c => c.id === hist), hs = h ? db.sales.filter(s => s.customerId === h.id) : [];
+  useEffect(() => {
+    let active = true;
+    apiGet('/api/customers')
+      .then(result => {
+        if (!Array.isArray(result.customers)) throw new Error('The API response did not include a customer list.');
+        if (active) {
+          setCustomers(result.customers);
+          mutate(d => { d.customers = result.customers; });
+        }
+      })
+      .catch(err => {
+        if (active) setError(err.message || 'Could not load customers from the database.');
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+  const submit = async e => {
+    e.preventDefault();
+    const v = form(e);
+    setSaving(true);
+    try {
+      const result = await apiPost('/api/customers', {
+        name: v.name.trim(),
+        phone: v.phone.trim(),
+        email: v.email.trim(),
+        address: v.address.trim()
+      });
+      if (!result.customer) throw new Error('The API did not return the saved customer.');
+      setCustomers(prev => [result.customer, ...prev]);
+      mutate((d, log) => {
+        d.customers = [result.customer, ...d.customers.filter(c => c.id !== result.customer.id)];
+        log('Customer added', result.customer.name);
+      });
+      e.target.reset();
+      setShow(false);
+      setError('');
+      toast('Customer saved');
+    } catch (err) {
+      setError(err.message || 'Could not save customer to the database.');
+      toast(err.message || 'Could not save customer');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const h = customers.find(c => c.id === hist), hs = h ? db.sales.filter(s => s.customerId === h.id) : [];
   return <>
     <Head title="Customer Management" sub="Customer profiles, purchase history and contact details."><button className="primary" onClick={() => setShow(!show)}>+ Add Customer</button></Head>
-    {show && <form className="panel form-grid" onSubmit={submit}><h3 className="full">New Customer</h3><label>Name<input name="name" required /></label><label>Phone<input name="phone" required /></label><label>Email<input name="email" type="email" /></label><label>Address<input name="address" /></label><div className="full"><button className="primary">Save Customer</button></div></form>}
+    {show && <form className="panel form-grid" onSubmit={submit}><h3 className="full">New Customer</h3><label>Name<input name="name" required /></label><label>Phone<input name="phone" required /></label><label>Email<input name="email" type="email" /></label><label>Address<input name="address" /></label><div className="full"><button className="primary" disabled={saving}>{saving ? 'Saving...' : 'Save Customer'}</button></div></form>}
+    {error && <div className="panel" role="alert">{error}</div>}
     <div className="panel"><div className="toolbar"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name or phone..." /></div>
       <div className="table-wrap"><table><thead><tr><th>Customer</th><th>Phone</th><th>Email</th><th>Address</th><th>Invoices</th><th>Total Spent</th><th>Outstanding</th><th>Action</th></tr></thead><tbody>
-        <Rows cols={8} msg="No customers yet" list={db.customers.filter(c => (c.name + c.phone).toLowerCase().includes(q.toLowerCase())).map(c => { const ss = db.sales.filter(s => s.customerId === c.id);
+        <Rows cols={8} msg={loading ? 'Loading customers...' : 'No customers yet'} list={customers.filter(c => (c.name + c.phone).toLowerCase().includes(q.toLowerCase())).map(c => { const ss = db.sales.filter(s => s.customerId === c.id);
           return <tr key={c.id}><td>{c.name}</td><td>{c.phone}</td><td>{c.email || '-'}</td><td>{c.address || '-'}</td><td>{ss.length}</td><td>{fmt(ss.reduce((a, s) => a + s.total, 0))}</td><td>{fmt(ss.reduce((a, s) => a + (s.balance || 0), 0))}</td><td><button className="secondary" onClick={() => setHist(c.id)}>History</button></td></tr>; })} /></tbody></table></div></div>
     {h && <div className="panel"><div className="panel-header"><h3>Purchase History: {h.name}</h3><button className="secondary" onClick={() => setHist(null)}>Close</button></div>
       <p style={{ color: '#6b7280', marginBottom: 10 }}>{h.phone} · {h.email || '-'} · {h.address || '-'}</p>

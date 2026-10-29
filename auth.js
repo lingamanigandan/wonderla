@@ -1,5 +1,6 @@
 (() => {
-  const ADMIN = { username: 'admin', password: 'Admin@123' };
+  const ADMIN = { username: 'Mohanraj', password: 'medishop@mohanraj123' };
+  const ADMIN2 = { username: 'Rajmohan', password: 'medishop@rajmohan123' };
   const SESSION_KEY = 'medishop-admin-session';
 
   const loginScreen = document.getElementById('login-screen');
@@ -37,8 +38,11 @@
       sessionStorage.setItem(SESSION_KEY, '1');
       passInput.value = '';
       showApp();
-    } else {
+    } else if (username === ADMIN2.username && password === ADMIN2.password) {
+      sessionStorage.setItem(SESSION_KEY, '1');
       passInput.value = '';
+      showApp();
+    } else {
       showError('Invalid username or password. Please try again.');
       passInput.focus();
     }

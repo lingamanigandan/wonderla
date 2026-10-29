@@ -16,7 +16,7 @@ if(!db)db={
  sales:[],purchases:[],suppliers:[{name:'MediSupply Co.',contact:'Ravi',phone:'9876543210',email:'ravi@medisupply.in',gstin:'33ABCDE1234F1Z5',address:'Chennai'}]};
 function ensureDefaults(){
  const DEF={categories:['Tablet','Capsule','Syrup','Injection','Ointment','Drops','Other'],customers:[],returns:[],prescriptions:[],taxSlabs:[0,5,12,18,28],audit:[],
-  settings:{name:'MediCare Pharmacy',address:'',phone:'',gstin:'',dlno:'',user:'Mohanraj',prefix:'INV-',footer:'Thank you! Get well soon.',defaultGst:5}};
+  settings:{name:'Medishop Pharmacy',address:'123, Main Street, Coimbatore, Tamil Nadu - 641001',phone:'+91 98765 43210',email:'medishoppharmacy@gmail.com',gstin:'',dlno:'',user:'Mohanraj',prefix:'INV-',footer:'Take care and stay healthy.',defaultGst:5}};
  Object.keys(DEF).forEach(k=>{if(db[k]===undefined)db[k]=JSON.parse(JSON.stringify(DEF[k]))});
  db.settings=Object.assign({},DEF.settings,db.settings);
  db.meds.forEach(m=>{if(m.category&&!db.categories.includes(m.category))db.categories.push(m.category)});
@@ -89,26 +89,20 @@ function printLabel(id){
  w.document.write(`<html><head><title>${esc(m.barcode)}</title></head><body style="font-family:Arial;text-align:center;margin:20px"><div style="display:inline-block;border:1px dashed #999;padding:10px 16px"><b>${esc(db.settings.name)}</b><br>${esc(m.name)}<br><small>Batch ${esc(m.batch)} · Exp ${m.expiry} · MRP ${fmt(m.price)}</small><br>${svg.outerHTML}</div><script>window.print()<\/script></body></html>`);
  w.document.close()}
 
-/* ===== Camera barcode scanner (phone/laptop camera, no hardware scanner needed) ===== */
-let scanner=null;
-function closeScanner(){
- $('#scan-modal').style.display='none';
- if(scanner){const sc=scanner;scanner=null;sc.stop().then(()=>sc.clear()).catch(()=>{})}}
-function openScanner(onDone){
- if(!window.Html5Qrcode)return toast('Scanner library not loaded. Check internet connection');
- $('#scan-modal').style.display='flex';
- const F=window.Html5QrcodeSupportedFormats,cfg={fps:10,qrbox:{width:280,height:140}};
- if(F)cfg.formatsToSupport=[F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.CODE_128,F.CODE_39,F.ITF,F.QR_CODE];
- scanner=new Html5Qrcode('scan-reader');
- scanner.start({facingMode:'environment'},cfg,txt=>{closeScanner();onDone(String(txt).trim())},()=>{})
-  .catch(()=>{closeScanner();toast('Camera not available. Allow camera permission and open the app over https')})}
-$('#scan-cancel').onclick=closeScanner;
-$('#scan-med').onclick=()=>openScanner(txt=>{$('#med-barcode').value=txt;refreshBarcode();toast('Scanned: '+txt)});
-$('#scan-bill').onclick=()=>openScanner(txt=>{const el=$('#bill-search');el.value=txt;el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))});
-$('#scan-search').onclick=()=>openScanner(txt=>{$('#barcode-input').value=txt;$('#barcode-form').dispatchEvent(new Event('submit',{cancelable:true}))});
+/* ===== Hardware barcode scanner (USB / Bluetooth) =====
+   A scanner types the number like a keyboard and presses Enter. We keep the cursor in the right box
+   on the Billing and Barcode Search pages, so every scan lands there. */
+const scanBoxes={billing:'#bill-search',barcode:'#barcode-input'};
+const curPage=()=>($('.page.active')||{}).id;
+function focusScanBox(p){const sel=scanBoxes[p||curPage()];if(sel)setTimeout(()=>$(sel).focus(),60)}
+document.addEventListener('keydown',e=>{
+ const sel=scanBoxes[curPage()];if(!sel)return;
+ const tag=((e.target&&e.target.tagName)||'').toLowerCase();
+ if(tag==='input'||tag==='select'||tag==='textarea'||e.ctrlKey||e.altKey||e.metaKey||e.key.length!==1)return;
+ $(sel).focus()});
 
 /* Navigation */
-function go(p){$$('.page').forEach(x=>x.classList.toggle('active',x.id===p));$$('.sidebar nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===p));render()}
+function go(p){$$('.page').forEach(x=>x.classList.toggle('active',x.id===p));$$('.sidebar nav a').forEach(a=>a.classList.toggle('active',a.dataset.page===p));render();focusScanBox(p)}
 $$('.sidebar nav a').forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.page)});
 $$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 
@@ -163,7 +157,7 @@ $('#bill-search').oninput=()=>{
 $('#bill-search').onkeydown=e=>{if(e.key!=='Enter')return;
  const code=e.target.value.trim().toLowerCase();if(!code)return;
  const hits=db.meds.filter(x=>x.barcode.toLowerCase()===code);
- if(!hits.length)return;
+ if(!hits.length){if(!db.meds.some(x=>(x.name+x.batch).toLowerCase().includes(code)))toast('No medicine found for this barcode');return}
  /* Shared manufacturer barcode: earliest-expiry sellable batch (FEFO). Batch label: exactly that batch. */
  const m=hits.filter(x=>x.qty>0&&x.expiry>=today()).sort((a,b)=>a.expiry.localeCompare(b.expiry))[0];
  if(!m)return toast('All batches for this barcode are out of stock or expired');
@@ -178,9 +172,12 @@ function addCart(id){const m=db.meds.find(x=>x.id===id),c=cart.find(x=>x.id===id
  if(next){addCart(next.id);toast(`Batch ${m.batch} used up. Added batch ${next.batch}`)}else toast('Not enough stock')}
 function setQty(id,v){const m=db.meds.find(x=>x.id===id),c=cart.find(x=>x.id===id);c.qty=Math.max(1,Math.min(+v||1,m.qty));renderCart()}
 function rmCart(id){cart=cart.filter(x=>x.id!==id);renderCart()}
-function totals(){let s=0,t=0;cart.forEach(c=>{const m=db.meds.find(x=>x.id===c.id),l=m.price*c.qty;s+=l;t+=l*m.gst/100});return{s,t}}
+/* GST rate for a cart item: the Tax option on the Billing page, or the medicine's own rate by default */
+const billRate=m=>{const v=$('#bill-tax').value;return v===''?m.gst:+v};
+$('#bill-tax').onchange=()=>renderCart();
+function totals(){let s=0,t=0;cart.forEach(c=>{const m=db.meds.find(x=>x.id===c.id),l=m.price*c.qty;s+=l;t+=l*billRate(m)/100});return{s,t}}
 function renderCart(){
- $('#cart-table').innerHTML=rows(cart.map(c=>{const m=db.meds.find(x=>x.id===c.id),l=m.price*c.qty;return `<tr><td>${esc(m.name)}${m.rx?' <span class="pill rx">Rx</span>':''}</td><td><input type="number" value="${c.qty}" min="1" style="width:80px" onchange="setQty(${m.id},this.value)"></td><td>${fmt(m.price)}</td><td>${m.gst}%</td><td>${fmt(l*(1+m.gst/100))}</td><td><button class="danger-btn" onclick="rmCart(${m.id})">Remove</button></td></tr>`}),6,'Cart is empty');
+ $('#cart-table').innerHTML=rows(cart.map(c=>{const m=db.meds.find(x=>x.id===c.id),l=m.price*c.qty;return `<tr><td>${esc(m.name)}${m.rx?' <span class="pill rx">Rx</span>':''}</td><td><input type="number" value="${c.qty}" min="1" style="width:80px" onchange="setQty(${m.id},this.value)"></td><td>${fmt(m.price)}</td><td>${billRate(m)}%</td><td>${fmt(l*(1+billRate(m)/100))}</td><td><button class="danger-btn" onclick="rmCart(${m.id})">Remove</button></td></tr>`}),6,'Cart is empty');
  const {s,t}=totals();$('#subtotal').textContent=fmt(s);$('#tax').textContent=fmt(t);$('#grand-total').textContent=fmt(s+t);
  if(!paidTouched)$('#amount-paid').value=(s+t).toFixed(2);
  $('#rx-box').classList.toggle('hidden',!cart.some(c=>db.meds.find(x=>x.id===c.id).rx))}
@@ -195,13 +192,13 @@ $('#checkout').onclick=()=>{
  const {s,t}=totals(),total=s+t,paid=Math.min(Math.max(+$('#amount-paid').value||0,0),total),bal=total-paid;
  const custId=$('#bill-customer').value,cust=db.customers.find(c=>String(c.id)===custId);
  if(bal>0.005&&!cust)return toast('Select a customer to bill on credit');
- const items=cart.map(c=>{const m=db.meds.find(x=>x.id===c.id);m.qty-=c.qty;return{medId:m.id,name:m.name,batch:m.batch,qty:c.qty,price:m.price,gst:m.gst}});
+ const items=cart.map(c=>{const m=db.meds.find(x=>x.id===c.id);m.qty-=c.qty;return{medId:m.id,name:m.name,batch:m.batch,qty:c.qty,price:m.price,gst:billRate(m),expiry:m.expiry}});
  const invoice=db.settings.prefix+padN(db.sales.length+1,4);
- const sale={invoice,date:today(),items,count:items.reduce((a,i)=>a+i.qty,0),payment:$('#payment').value,subtotal:s,gst:t,total,paid,balance:bal,customerId:cust?cust.id:null,customer:cust?cust.name:'Walk-in',rx:needRx?rxId:null,payments:paid>0?[{date:today(),amount:paid,method:$('#payment').value}]:[]};
+ const sale={invoice,date:today(),time:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),items,count:items.reduce((a,i)=>a+i.qty,0),payment:$('#payment').value,subtotal:s,gst:t,total,paid,balance:bal,customerId:cust?cust.id:null,customer:cust?cust.name:'Walk-in',rx:needRx?rxId:null,payments:paid>0?[{date:today(),amount:paid,method:$('#payment').value}]:[]};
  db.sales.unshift(sale);
  items.forEach(i=>log('Stock deducted',`${i.name} (${i.batch}) -${i.qty} via ${invoice}`));
  log('Invoice created',`${invoice} · ${fmt(total)} · ${sale.customer}${bal>0.005?' · balance '+fmt(bal):''}`);
- save();toast('Sale completed: '+invoice);cart=[];paidTouched=false;$('#bill-search').value='';$('#bill-results').innerHTML='';$('#bill-rx').value='';$('#bill-customer').value='';render()};
+ save();toast('Sale completed: '+invoice);cart=[];paidTouched=false;$('#bill-search').value='';$('#bill-results').innerHTML='';$('#bill-rx').value='';$('#bill-customer').value='';$('#bill-tax').value='';render();$('#bill-search').focus();if($('#print-after').checked)printInv(invoice)};
 
 /* Purchases */
 $('#purchase-form').onsubmit=e=>{e.preventDefault();
@@ -232,10 +229,101 @@ function renderSuppliers(){const q=$('#supplier-search').value.toLowerCase();
 $('#sales-search').oninput=renderSales;$('#sales-date').onchange=renderSales;
 function renderSales(){const q=$('#sales-search').value.toLowerCase(),d=$('#sales-date').value;
  $('#sales-table').innerHTML=rows(db.sales.filter(s=>s.invoice.toLowerCase().includes(q)&&(!d||s.date===d)).map(s=>`<tr><td>${s.invoice}</td><td>${s.date}</td><td>${esc(s.customer||'Walk-in')}</td><td>${s.count}</td><td>${s.payment}</td><td>${fmt(s.subtotal)}</td><td>${fmt(s.gst)}</td><td>${fmt(s.total)}</td><td>${sp(pstat(s))}</td><td><button class="secondary" onclick="printInv('${s.invoice}')">Print</button></td></tr>`),10)}
-function printInv(no){const s=db.sales.find(x=>x.invoice===no),st=db.settings,w=window.open('','_blank');
+/* Sales invoice print: Medishop template design (A4) */
+function printInv(no){
+ const s=db.sales.find(x=>x.invoice===no);if(!s)return;
+ const st=db.settings,w=window.open('','_blank');
  if(!w)return toast('Allow pop-ups to print');
+ const T='#0b5d5b',G='#22a45d';
  const ig=i=>i.gst??((db.meds.find(m=>m.id===i.medId||m.name===i.name)||{}).gst??0);
- w.document.write(`<html><head><title>${no}</title><style>body{font-family:Arial;max-width:600px;margin:20px auto}table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #ddd;text-align:left}.r{text-align:right}</style></head><body><h2>${esc(st.name)}</h2><p>${esc(st.address)}<br>${esc(st.phone)} ${st.gstin?'· GSTIN '+esc(st.gstin):''} ${st.dlno?'· DL '+esc(st.dlno):''}</p><hr><p><b>${no}</b> · ${s.date}<br>Customer: ${esc(s.customer||'Walk-in')}</p><table><tr><th>Item</th><th>Qty</th><th>Price</th><th>GST</th><th class="r">Amount</th></tr>${s.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${fmt(i.price)}</td><td>${ig(i)}%</td><td class="r">${fmt(i.price*i.qty)}</td></tr>`).join('')}</table><p class="r">Subtotal: ${fmt(s.subtotal)}<br>GST: ${fmt(s.gst)}<br><b>Total: ${fmt(s.total)}</b><br>Paid: ${fmt(s.paid??s.total)} · Balance: ${fmt(s.balance||0)}</p><p>${esc(st.footer)}</p><script>window.print()<\/script></body></html>`);w.document.close()}
+ const exp=i=>{const e=i.expiry||(db.meds.find(m=>m.id===i.medId)||{}).expiry||'';return e?e.slice(5,7)+'/'+e.slice(0,4):'-'};
+ const dmy=d=>d?String(d).split('-').reverse().join('-'):'-';
+ const cust=db.customers.find(c=>String(c.id)===String(s.customerId));
+ const logo=new URL('mmm.png',location.href).href,logo2=new URL('logo.svg',location.href).href;
+ const discount=s.discount||0,taxable=s.subtotal-discount;
+ const rates=[...new Set(s.items.map(ig))];
+ const gstLabel=rates.length===1?`GST (${rates[0]}%)`:'GST';
+ const P={loc:'M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z',
+  tel:'M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z',
+  mail:'M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
+  user:'M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z',
+  doc:'M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
+  cal:'M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10z',
+  clock:'M12 2a10 10 0 100 20 10 10 0 000-20zm1 11h-5V7h2v4h3v2z',
+  card:'M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z',
+  shield:'M12 1L3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm-2 16l-4-4 1.4-1.4L10 14.2l6.6-6.6L18 9l-8 8z',
+  group:'M16 11c1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3 1.3 3 3 3zm-8 0c1.7 0 3-1.3 3-3S9.7 5 8 5 5 6.3 5 8s1.3 3 3 3zm0 2c-2.3 0-7 1.2-7 3.5V19h14v-2.5C15 14.2 10.3 13 8 13zm8 0c-.3 0-.6 0-1 .1 1.2.8 2 1.9 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5z',
+  bottle:'M10 2h4v2h-4V2zm-2 3h8v2l1 2v11c0 1.1-.9 2-2 2H9c-1.1 0-2-.9-2-2V9l1-2V5zm3 6v2H9v2h2v2h2v-2h2v-2h-2v-2h-2z',
+  heart:'M12 21.4l-1.5-1.3C5.4 15.4 2 12.3 2 8.5 2 5.4 4.4 3 7.5 3c1.7 0 3.4.8 4.5 2.1C13.1 3.8 14.8 3 16.5 3 19.6 3 22 5.4 22 8.5c0 3.8-3.4 6.9-8.5 11.6L12 21.4z'};
+ const I=(k,sz,c)=>`<svg viewBox="0 0 24 24" width="${sz||20}" height="${sz||20}" fill="${c||T}"><path d="${P[k]}"/></svg>`;
+ const body=s.items.map((i,n)=>`<tr><td class="c">${n+1}</td><td>${esc(i.name)}</td><td class="c">${esc(i.batch||'-')}</td><td class="c">${exp(i)}</td><td class="c">${i.qty}</td><td class="r">${fmt(i.price)}</td><td class="r">${fmt(i.price)}</td><td class="r">${fmt(i.price*i.qty)}</td></tr>`);
+ while(body.length<5)body.push('<tr>'+'<td>&nbsp;</td>'.repeat(8)+'</tr>');
+ const contact=[['loc',st.address],['tel',st.phone],['mail',st.email]].filter(x=>x[1]).map(x=>`<div>${I(x[0],18)}<span>${esc(x[1])}</span></div>`).join('');
+ const css=`@page{size:A4;margin:0}*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.sheet{position:relative;width:200mm;min-height:287mm;margin:5mm auto;border:2px solid ${T};border-radius:14px;padding:8mm 9mm;overflow:hidden}
+.wm{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:120mm;opacity:.07;z-index:0}
+.in{position:relative;z-index:1}
+.head{display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1.5px solid ${T}}
+.head img{height:64px;max-width:105mm;object-fit:contain}.head h1{margin:0;color:${T};font-size:24px}
+.contact div{display:flex;gap:8px;align-items:center;margin:5px 0;font-size:11.5px}
+.title{text-align:center;margin:10px 0}
+.title span{display:inline-block;background:${T};color:#fff;font-weight:700;font-size:20px;letter-spacing:1px;padding:5px 46px;border-radius:30px}
+.meta{display:flex;background:#e6f4f1;border-radius:10px;padding:8px 10px;gap:10px}
+.meta>div{flex:1;display:flex;gap:7px;align-items:center}
+.meta b{display:block;font-size:10.5px;color:#374151;font-weight:600}
+.v{display:block;background:#fff;border:1px solid #cfe3de;border-radius:5px;padding:4px 6px;min-height:22px;font-size:12px;font-weight:600}
+.cust{display:flex;border:1.5px solid ${G};border-radius:10px;margin:10px 0;padding:8px 10px}
+.cust .l{flex:1.2;border-right:1px solid #cfd8d6;padding-right:12px}.cust .rt{flex:1;padding-left:14px}
+.fld{display:flex;gap:9px;align-items:flex-start;margin:4px 0}.fld>div{flex:1}.fld b{font-size:12px;display:block;margin-bottom:2px}
+table.items{width:100%;border-collapse:collapse;border:1px solid #cfd8d6}
+.items th{background:${T};color:#fff;padding:8px 4px;font-size:11.5px}
+.items td{border:1px solid #d5dedc;padding:6px 5px;height:26px;font-size:12px}
+.c{text-align:center}.r{text-align:right}
+.bottom{display:flex;gap:14px;align-items:flex-end;margin-top:10px}
+.thanks{flex:1.2;display:flex;gap:10px;align-items:center;background:#e1f3e4;border-radius:8px;padding:12px}
+.thanks b{color:${T};font-size:13.5px;display:block;margin-bottom:2px}
+.tot{flex:.9;border:1px solid #cfd8d6;border-radius:8px;overflow:hidden}
+.tot div{display:flex;border-bottom:1px solid #d5dedc}.tot div span{padding:7px 9px}
+.tot div span:first-child{flex:1;font-weight:700;background:#eef6f4}.tot div span:last-child{width:46%;text-align:right}
+.tot .g{background:${T};color:#fff;font-size:15px;font-weight:700;border:0}.tot .g span:first-child{background:${T}}
+.feat{display:flex;border-top:1px solid #cfd8d6;margin-top:14px;padding-top:10px}
+.feat div{flex:1;display:flex;gap:8px;align-items:center;justify-content:center;font-size:11.5px}
+.foot{display:flex;border-top:1px solid #cfd8d6;margin-top:10px;padding-top:8px;gap:12px}
+.foot .n{flex:1.5;font-size:11px;line-height:1.5}
+.foot .sg{flex:1;text-align:center;border-left:1px solid #cfd8d6;padding-top:38px;font-size:12px}`;
+ const html=`<html><head><title>${esc(no)}</title><style>${css}</style><script>var LOGO2=${JSON.stringify(logo2)},NAME=${JSON.stringify(String(st.name)).replace(/</g,'\\u003c')};function logoFail(i){if(i.getAttribute('data-t')){var h=document.createElement('h1');h.textContent=NAME;i.replaceWith(h)}else{i.setAttribute('data-t','1');i.src=LOGO2}}<\/script></head><body><div class="sheet">
+<img class="wm" src="${logo}" onerror="this.style.display='none'">
+<div class="in">
+<div class="head"><img src="${logo}" alt="${esc(st.name)}" onerror="logoFail(this)"><div class="contact">${contact}</div></div>
+<div class="title"><span>SALES INVOICE</span></div>
+<div class="meta">
+<div>${I('doc',26)}<div><b>Invoice No.</b><span class="v">${esc(s.invoice)}</span></div></div>
+<div>${I('cal',26)}<div><b>Date</b><span class="v">${dmy(s.date)}</span></div></div>
+<div>${I('clock',26)}<div><b>Time</b><span class="v">${esc(s.time||'-')}</span></div></div>
+<div>${I('card',26)}<div><b>Payment Mode</b><span class="v">${esc(s.payment||'-')}</span></div></div>
+</div>
+<div class="cust"><div class="l">
+<div class="fld">${I('user',24)}<div><b>Customer Name:</b><span class="v">${esc(s.customer||'Walk-in')}</span></div></div>
+<div class="fld">${I('tel',24)}<div><b>Mobile Number:</b><span class="v">${esc(cust?cust.phone:'-')}</span></div></div>
+</div><div class="rt"><div class="fld">${I('doc',24)}<div><b>Prescription Number:</b><span class="v">${esc(s.rx||'-')}</span></div></div></div></div>
+<table class="items"><thead><tr><th style="width:7%">S.No</th><th>Medicine Name</th><th style="width:12%">Batch No.</th><th style="width:10%">Expiry</th><th style="width:7%">Qty</th><th style="width:10%">MRP (₹)</th><th style="width:10%">Rate (₹)</th><th style="width:12%">Amount (₹)</th></tr></thead><tbody>${body.join('')}</tbody></table>
+<div class="bottom">
+<div class="thanks">${I('heart',38,G)}<div><b>Thank you for choosing ${esc(st.name)}!</b>${esc(st.footer||'')}</div></div>
+<div class="tot">
+<div><span>Total Amount</span><span>${fmt(s.subtotal)}</span></div>
+<div><span>Discount</span><span>${fmt(discount)}</span></div>
+<div><span>Taxable Amount</span><span>${fmt(taxable)}</span></div>
+<div><span>${gstLabel}</span><span>${fmt(s.gst)}</span></div>
+<div class="g"><span>Grand Total</span><span>${fmt(s.total)}</span></div>
+${(s.balance||0)>0.005?`<div><span>Paid</span><span>${fmt(s.paid||0)}</span></div><div><span>Balance Due</span><span>${fmt(s.balance)}</span></div>`:''}
+</div></div>
+<div class="feat"><div>${I('bottle',30)}<span>Genuine Medicines<br>Assured Quality</span></div><div>${I('shield',30)}<span>Your Health<br>Our Priority</span></div><div>${I('group',30)}<span>Trusted by Families<br>Everyday</span></div></div>
+<div class="foot"><div class="n"><b>Note:</b><br>1. Goods once sold will not be taken back or exchanged.<br>2. Please consult your doctor for dosage and usage.<br>3. Keep medicines out of reach of children.<br>4. For any queries, contact us at the above number.</div>
+<div class="sg">Authorized Signature<br><b>${esc(st.name)}</b></div></div>
+</div></div>
+<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body></html>`;
+ w.document.write(html);w.document.close()}
 
 /* Barcode search (case-insensitive exact match) */
 $('#barcode-form').onsubmit=e=>{e.preventDefault();
@@ -311,8 +399,8 @@ async function loadCustomersFromMySQL(){
   db.customers=data.customers.map(c=>({...c,created:c.created_at||today()}));
   save();renderCustomers();fillBillSelects();
  }catch(error){
-  console.error("Customer loading error:",error);
-  toast("Could not load customers from MySQL");
+  console.warn("Customer server not reachable at "+API_BASE+":",error.message);
+  toast("Customer server is offline. Showing saved customers only");
  }
 }
 
@@ -417,16 +505,12 @@ function renderPayments(){
  $('#out-table').innerHTML=rows(db.sales.filter(s=>(s.balance||0)>0.005).map(s=>`<tr><td>${s.invoice}</td><td>${s.date}</td><td>${esc(s.customer)}</td><td>${fmt(s.total)}</td><td>${fmt(s.paid||0)}</td><td>${fmt(s.balance)}</td><td>${sp(pstat(s))}</td><td><button class="primary" onclick="receivePay('${s.invoice}')">Receive</button></td></tr>`),8,'No outstanding balances');
  $('#pay-table').innerHTML=rows(all.slice(0,30).map(p=>`<tr><td>${p.date}</td><td>${p.inv}</td><td>${esc(p.cust)}</td><td>${p.method}</td><td>${fmt(p.amount)}</td></tr>`),5,'No payments yet')}
 
-/* Tax */
-$('#tax-form').onsubmit=e=>{e.preventDefault();const r=+$('#tax-rate').value;
- if(db.taxSlabs.includes(r))return toast('Slab already exists');db.taxSlabs.push(r);db.taxSlabs.sort((a,b)=>a-b);log('Tax slab added',r+'%');save();e.target.reset();render()};
-function delSlab(r){if(db.meds.some(m=>m.gst===r)||db.settings.defaultGst===r)return toast('Slab is in use');db.taxSlabs=db.taxSlabs.filter(x=>x!==r);log('Tax slab removed',r+'%');save();render()}
+/* Tax: GST slabs are fixed (0, 5, 12, 18, 28). The rate is set per medicine in Add Medicine,
+   a default in Settings, and can be overridden for a whole bill with the Tax option in Billing. */
 function renderTax(){
  const o=db.taxSlabs.map(r=>`<option value="${r}">${r}%</option>`).join('');
  fillSel($('#med-gst'),o,String(db.settings.defaultGst));fillSel($('#set-gst'),o,String(db.settings.defaultGst));
- $('#slab-chips').innerHTML=db.taxSlabs.map(r=>`<span class="chip">${r}%<button title="Remove" onclick="delSlab(${r})">×</button></span>`).join('');
- const agg={};db.sales.forEach(s=>s.items.forEach(i=>{const g=i.gst??((db.meds.find(m=>m.id===i.medId||m.name===i.name)||{}).gst??0);agg[g]=(agg[g]||0)+i.price*i.qty}));
- $('#tax-table').innerHTML=rows(Object.keys(agg).map(Number).sort((a,b)=>a-b).map(g=>{const t=agg[g]*g/100;return `<tr><td>${g}%</td><td>${fmt(agg[g])}</td><td>${fmt(t/2)}</td><td>${fmt(t/2)}</td><td>${fmt(t)}</td></tr>`}),5,'No sales yet')}
+ fillSel($('#bill-tax'),'<option value="">As per medicine</option>'+db.taxSlabs.map(r=>`<option value="${r}">${r}% on all items</option>`).join(''))}
 
 /* Notifications */
 function notes(){const n=[];
@@ -443,7 +527,7 @@ function renderNotes(){const all=notes(),f=$('#note-filter').value,list=all.filt
  const k=all.filter(n=>n.t!=='Purchase').length,b=$('#notif-badge');b.textContent=k;b.classList.toggle('hidden',!k)}
 
 /* Settings */
-const SKEYS=['name','address','phone','gstin','dlno','user','prefix','footer'];
+const SKEYS=['name','address','phone','email','gstin','dlno','user','prefix','footer'];
 $('#settings-form').onsubmit=e=>{e.preventDefault();const s=db.settings,old=JSON.stringify(s);
  SKEYS.forEach(k=>s[k]=$('#set-'+k).value.trim());s.defaultGst=+$('#set-gst').value;
  if(JSON.stringify(s)!==old)log('Settings changed','Pharmacy, invoice or tax settings updated');save();toast('Settings saved');render()};
@@ -489,6 +573,8 @@ function render(){
  $('#user-name').textContent=db.settings.user;
  renderTax();renderCats();renderSuppliers();fillBillSelects();renderInventory();renderSales();renderCart();renderCharts();
  renderCustomers();renderReturns();renderRx();renderPayments();renderNotes();renderSettings();renderAudit();
+ document.documentElement.style.setProperty('--sbw',($('.sidebar').offsetWidth||278)+'px');
 }
+addEventListener('resize',()=>document.documentElement.style.setProperty('--sbw',($('.sidebar').offsetWidth||278)+'px'));
 render();
 loadCustomersFromMySQL();
